@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0c0c0d">
     <title>Local Movie Maker</title>
-    <link rel="stylesheet" href="static/styles.css?v=3">
+    <link rel="stylesheet" href="static/styles.css?v=4">
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -71,9 +71,13 @@
                 <select id="image-workflow" name="image_workflow"><option value="">Use configured image workflow</option></select>
                 <small id="image-workflow-help">Saved ComfyUI T2I API workflows appear here.</small>
               </label>
-              <label class="wide">Video workflow <b>required</b>
+              <label>Reference video workflow <b>required</b>
                 <select id="video-workflow" name="video_workflow"><option value="">Select a video workflow</option></select>
-                <small id="workflow-help">Saved ComfyUI API workflows that produce video appear here.</small>
+                <small id="workflow-help">Text + character/setting references. Used to begin every shot.</small>
+              </label>
+              <label>Continuation workflow
+                <select id="continuation-workflow" name="continuation_workflow"><option value="">No continuation workflow</option></select>
+                <small id="continuation-workflow-help">Text + references + prior segment keyframe. Used only for long shots.</small>
               </label>
             </div>
             <button class="refresh-integrations" id="refresh-integrations" type="button">↻ Refresh local services</button>
@@ -119,6 +123,6 @@
     </main>
 
     <footer><span>LOCAL MOVIE MAKER</span><span>llama.cpp · ComfyUI · FFmpeg</span></footer>
-    <script src="static/app.js?v=3" defer></script>
+    <script src="static/app.js?v=4" defer></script>
   </body>
 </html>

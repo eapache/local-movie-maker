@@ -54,7 +54,7 @@ The app lists workflows from ComfyUI's `userdata` API and recognizes T2I, image-
 1. Enable **Dev Mode** in ComfyUI settings.
 2. Open and test the image or video workflow.
 3. Open ComfyUI's **File** menu and choose **Export (API)**. If that is the API export action you already see, it is the correct one—current ComfyUI does not call it **Save (API Format)**. Export downloads a JSON file; it does not add the API graph to ComfyUI's saved-workflow list.
-4. Either set `COMFY_IMAGE_WORKFLOW` or `COMFY_VIDEO_WORKFLOW` to that downloaded file, or copy it into the active ComfyUI user workflow directory (commonly `ComfyUI/user/default/workflows/`) under a distinct name such as `portrait-api.json` so it does not overwrite the editable UI graph.
+4. Set the corresponding workflow environment variable to that downloaded file, or copy it into the active ComfyUI user workflow directory (commonly `ComfyUI/user/default/workflows/`) under a distinct name such as `portrait-api.json` so it does not overwrite the editable UI graph.
 5. If you copied it into ComfyUI, open **Advanced models & workflows** in Local Movie Maker, refresh, and select it.
 
 UI-format workflows are shown but disabled with an “Export API” label. This is intentional: silently guessing how to flatten arbitrary custom nodes and subgraphs can change a graph's behavior. A native video workflow is required; there is no still-image motion fallback.
@@ -72,15 +72,26 @@ Image workflows can use:
 | `{{WIDTH}}`, `{{IMAGE_WIDTH}}` | Generation width |
 | `{{HEIGHT}}`, `{{IMAGE_HEIGHT}}` | Generation height |
 
-Video workflows additionally receive:
+The primary video workflow begins each shot from text plus the generated character
+and setting references. It receives:
 
 | Token | Meaning |
 | --- | --- |
-| `{{IMAGE}}` | Uploaded shot keyframe name, for a `LoadImage` node |
+| `{{REFERENCE_IMAGES}}` | List of relevant uploaded reference filenames |
+| `{{REFERENCE_IMAGE}}`, `{{REFERENCE_IMAGE_1}}` … `{{REFERENCE_IMAGE_6}}` | Relevant references in character-then-setting order |
+| `{{CHARACTER_REFERENCE_1}}` … `{{CHARACTER_REFERENCE_3}}` | Character reference filenames |
+| `{{SETTING_REFERENCE}}` | Current setting reference filename |
 | `{{DURATION}}` | Shot length in seconds |
 | `{{FRAMES}}` | Shot length at 24 fps |
 | `{{FPS}}` | `24` |
 | `{{WIDTH}}`, `{{HEIGHT}}` | Final output dimensions |
+
+The optional continuation workflow receives all of the same values plus
+`{{KEYFRAME_IMAGE}}` (also available as the legacy `{{IMAGE}}` alias). It is used
+only when a planned shot is longer than `COMFY_VIDEO_SEGMENT_SECONDS`; the
+keyframe is extracted from the prior segment's final frame rather than generated
+independently. LoadImage nodes may alternatively be titled **Character Reference
+1**, **Setting Reference**, or **Continuation Keyframe** for automatic injection.
 
 Audio workflows receive `{{PROMPT}}`, `{{DURATION}}`, `{{SECONDS}}`, and `{{SEED}}`.
 
@@ -88,11 +99,18 @@ Set the optional workflow paths before starting the app:
 
 ```bash
 export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
+export COMFY_CONTINUATION_WORKFLOW="$PWD/workflows/my-continuation-api.json"
 export COMFY_AUDIO_WORKFLOW="$PWD/workflows/my-audio-api.json"
 python3 run.py
 ```
 
-ComfyUI installations and video/audio node packs vary substantially, which is why those workflows are user-supplied. For ordinary saved API exports, the app injects common prompt, image, duration/frame-count, size, FPS, and seed fields. Explicit `{{TOKEN}}` placeholders remain available when a graph uses unusual names. Audio produced by a video workflow is preserved; an optional audio workflow can supply a separate score. No synthetic media is substituted for missing generative models.
+ComfyUI installations and video/audio node packs vary substantially, which is why those workflows are user-supplied. Pure T2V and ordinary keyframe-only I2V graphs are discovered but are not offered as primary movie workflows: the primary graph must accept references, and the continuation graph must accept references plus a keyframe. For ordinary saved API exports, the app injects common prompt, reference, duration/frame-count, size, FPS, and seed fields. Explicit `{{TOKEN}}` placeholders remain available when a graph uses unusual names.
+
+All character and setting images are generated before any video job is queued, so
+ComfyUI can keep the image model hot and then transition to video generation only
+once. References are uploaded once and reused across every matching shot. Audio
+produced by a video workflow is preserved; an optional audio workflow can supply
+a separate score. No synthetic media is substituted for missing generative models.
 
 ## Pipeline
 
@@ -103,9 +121,13 @@ prompt + duration + resolution
   treatment → continuity bible → timed shot script     llama.cpp
              │
              ▼  model/context released
-  characters + settings → shot stills → video clips   ComfyUI
-             │                         │
-             └──────── score ──────────┘               ComfyUI or fallback
+  all character + setting reference images            ComfyUI image phase
+             │
+             ▼
+  text + relevant refs → video clips                   ComfyUI video phase
+             │                │ long shot only
+             │                └─ last frame → continuation
+             └──────── score ───────────────────────── ComfyUI or fallback
                               │
                               ▼
                          final.mp4                      FFmpeg
@@ -115,7 +137,7 @@ Generated state is updated atomically in `projects/<id>/project.json`. If the ap
 
 ## HTTP API
 
-- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, and `video_workflow` selections.
+- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, `video_workflow`, and `continuation_workflow` selections.
 - `GET /api/integrations` — discovers llama.cpp models, ComfyUI checkpoints, and saved workflows.
 - `GET /api/projects/<id>` — returns status, progress, plan, assets, errors, and final URL.
 - `GET /api/projects` — returns the 20 most recent projects.

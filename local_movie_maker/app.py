@@ -63,6 +63,9 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                         for key, size in RESOLUTIONS.items()
                     ],
                     "video_workflow": bool(self.app.settings.video_workflow),
+                    "continuation_workflow": bool(
+                        self.app.settings.continuation_workflow
+                    ),
                     "audio_workflow": bool(self.app.settings.audio_workflow),
                     "llama_model": self.app.settings.llama_model,
                     "checkpoint": self.app.settings.checkpoint,
@@ -105,6 +108,11 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                 "workflows": {
                     "image": settings.image_workflow.name,
                     "video": settings.video_workflow.name if settings.video_workflow else None,
+                    "continuation": (
+                        settings.continuation_workflow.name
+                        if settings.continuation_workflow
+                        else None
+                    ),
                     "audio": settings.audio_workflow.name if settings.audio_workflow else None,
                 },
                 "saved_workflows": [],
@@ -165,8 +173,8 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                 and self.app.settings.video_workflow is None
             ):
                 raise ValueError(
-                    "Choose an executable ComfyUI video workflow under Advanced settings, "
-                    "or set COMFY_VIDEO_WORKFLOW."
+                    "Choose an executable text-and-reference ComfyUI video workflow "
+                    "under Advanced settings, or set COMFY_VIDEO_WORKFLOW."
                 )
         except (ValueError, json.JSONDecodeError) as exc:
             self._error(HTTPStatus.BAD_REQUEST, str(exc))

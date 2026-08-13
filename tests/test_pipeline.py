@@ -6,6 +6,9 @@ from local_movie_maker.pipeline import (
     MoviePipeline,
     image_values,
     inject_api_workflow,
+    references_for_shot,
+    split_duration,
+    video_values,
     workflow_uses_token,
 )
 from local_movie_maker.store import ProjectStore
@@ -62,3 +65,50 @@ def test_checkpoint_resolution_is_only_needed_for_tokenized_workflows():
 
     assert not workflow_uses_token(exported, "CHECKPOINT")
     assert workflow_uses_token(fallback, "CHECKPOINT")
+
+
+def test_reference_and_keyframe_inputs_are_injected_by_role():
+    workflow = {
+        "character": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "old-character.png"},
+            "_meta": {"title": "Character Reference 1"},
+        },
+        "setting": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "old-setting.png"},
+            "_meta": {"title": "Setting Reference"},
+        },
+        "keyframe": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "old-frame.png"},
+            "_meta": {"title": "Continuation Keyframe"},
+        },
+    }
+    references = {
+        "all": ["frog.png", "mars.png"],
+        "characters": ["frog.png"],
+        "setting": "mars.png",
+    }
+    values = video_values("Frog runs", 42, "720p", 6, references, "prior.png")
+
+    result = inject_api_workflow(workflow, values)
+
+    assert result["character"]["inputs"]["image"] == "frog.png"
+    assert result["setting"]["inputs"]["image"] == "mars.png"
+    assert result["keyframe"]["inputs"]["image"] == "prior.png"
+    assert values["REFERENCE_IMAGES"] == ["frog.png", "mars.png"]
+
+
+def test_shot_references_and_long_segments_are_deterministic():
+    uploaded = {
+        ("character", "Pip"): "pip.png",
+        ("setting", "Mars"): "mars.png",
+    }
+
+    references = references_for_shot(
+        {"title": "Charge", "characters": ["Pip"], "setting": "Mars"}, uploaded
+    )
+
+    assert references["all"] == ["pip.png", "mars.png"]
+    assert split_duration(17, 8) == [6, 6, 5]

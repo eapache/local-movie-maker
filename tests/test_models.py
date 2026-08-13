@@ -11,10 +11,12 @@ def test_project_request_validation():
             "duration": "30",
             "resolution": "720p",
             "image_workflow": "saved:portrait-api.json",
+            "continuation_workflow": "saved:continue-api.json",
         }
     )
     assert request.duration == 30
     assert request.image_workflow == "saved:portrait-api.json"
+    assert request.continuation_workflow == "saved:continue-api.json"
 
     with pytest.raises(ValueError, match="Prompt"):
         ProjectRequest.from_dict({"prompt": "x", "duration": 30, "resolution": "720p"})

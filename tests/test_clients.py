@@ -83,3 +83,34 @@ def test_saved_workflow_classification_distinguishes_t2v_and_i2v():
     }
     assert describe_workflow("t2v.json", t2v)["kind"] == "t2v"
     assert describe_workflow("i2v.json", i2v)["kind"] == "i2v"
+
+
+def test_saved_workflow_classification_detects_reference_video_roles():
+    ref2v = {
+        "reference": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "{{REFERENCE_IMAGE_1}}"},
+            "_meta": {"title": "Character Reference 1"},
+        },
+        "output": {"class_type": "SaveVideo", "inputs": {}},
+    }
+    continuation = {
+        **ref2v,
+        "start": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "{{KEYFRAME_IMAGE}}"},
+            "_meta": {"title": "Continuation Keyframe"},
+        },
+    }
+
+    primary = describe_workflow("ref2v.json", ref2v)
+    continued = describe_workflow("continuation.json", continuation)
+
+    assert primary["kind"] == "ref2v"
+    assert primary["capabilities"] == {
+        "video": True,
+        "references": True,
+        "keyframe": False,
+    }
+    assert continued["kind"] == "ref-i2v"
+    assert continued["capabilities"]["keyframe"] is True

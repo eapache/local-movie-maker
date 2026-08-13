@@ -421,26 +421,53 @@ def describe_workflow(name: str, workflow: dict[str, Any]) -> dict[str, Any]:
         isinstance(node, dict) and "class_type" in node for node in workflow.values()
     ):
         workflow_format = "api"
-        types = {str(node.get("class_type", "")) for node in workflow.values()}
+        nodes = list(workflow.values())
+        types = {str(node.get("class_type", "")) for node in nodes}
         inputs = [
             str(key).lower()
-            for node in workflow.values()
+            for node in nodes
             for key in node.get("inputs", {}).keys()
         ]
     else:
         workflow_format = "unknown"
+        nodes = []
         types = set()
         inputs = []
 
     lowered_types = " ".join(types).lower()
     has_video = any("video" in item.lower() for item in types)
     has_audio = any("audio" in item.lower() for item in types)
-    # An IMAGE-typed edge is common inside both T2V and I2V graphs; an actual
-    # LoadImage node is the reliable signal that the workflow needs a keyframe.
-    has_image_input = "LoadImage" in types
+    serialized = json.dumps(workflow).upper()
+    load_image_titles = [
+        str(node.get("title") or node.get("_meta", {}).get("title", "")).lower()
+        for node in nodes
+        if str(node.get("type") or node.get("class_type", "")).lower() == "loadimage"
+    ]
+    has_image_input = bool(load_image_titles)
+    has_references = any(
+        token in serialized
+        for token in ("REFERENCE_IMAGE", "CHARACTER_REFERENCE", "SETTING_REFERENCE")
+    ) or any(
+        any(word in title for word in ("reference", "character", "setting"))
+        for title in load_image_titles
+    )
+    has_keyframe = "KEYFRAME_IMAGE" in serialized or any(
+        any(word in title for word in ("keyframe", "first frame", "start frame"))
+        for title in load_image_titles
+    )
+    # A legacy graph with one untitled LoadImage is assumed to be ordinary I2V.
+    if has_image_input and not has_references:
+        has_keyframe = True
     has_image_output = any(item in types for item in ("SaveImage", "PreviewImage"))
     if has_video:
-        kind = "i2v" if has_image_input else "t2v"
+        if has_references and has_keyframe:
+            kind = "ref-i2v"
+        elif has_references:
+            kind = "ref2v"
+        elif has_keyframe:
+            kind = "i2v"
+        else:
+            kind = "t2v"
     elif has_audio and any("save" in item.lower() for item in types):
         kind = "audio"
     elif has_image_output or "sampler" in lowered_types:
@@ -452,6 +479,11 @@ def describe_workflow(name: str, workflow: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         "format": workflow_format,
         "kind": kind,
+        "capabilities": {
+            "video": has_video,
+            "references": has_references,
+            "keyframe": has_keyframe,
+        },
         "executable": workflow_format == "api",
         "error": (
             None

@@ -75,6 +75,38 @@ class MediaTools:
         )
         return destination
 
+    def extract_first_frame(self, source: Path, destination: Path) -> Path:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        self._run(
+            [
+                self.ffmpeg,
+                "-y",
+                "-i",
+                str(source),
+                "-frames:v",
+                "1",
+                str(destination),
+            ]
+        )
+        return destination
+
+    def extract_last_frame(self, source: Path, destination: Path) -> Path:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        self._run(
+            [
+                self.ffmpeg,
+                "-y",
+                "-sseof",
+                "-0.1",
+                "-i",
+                str(source),
+                "-frames:v",
+                "1",
+                str(destination),
+            ]
+        )
+        return destination
+
     def assemble(self, clips: list[Path], audio: Path | None, destination: Path) -> Path:
         if not clips:
             raise MediaError("There are no clips to assemble.")

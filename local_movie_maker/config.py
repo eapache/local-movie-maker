@@ -39,6 +39,12 @@ class Settings:
     video_workflow: Path | None = (
         Path(value) if (value := os.getenv("COMFY_VIDEO_WORKFLOW")) else None
     )
+    continuation_workflow: Path | None = (
+        Path(value) if (value := os.getenv("COMFY_CONTINUATION_WORKFLOW")) else None
+    )
+    video_segment_seconds: int = max(
+        1, int(os.getenv("COMFY_VIDEO_SEGMENT_SECONDS", "8"))
+    )
     audio_workflow: Path | None = (
         Path(value) if (value := os.getenv("COMFY_AUDIO_WORKFLOW")) else None
     )

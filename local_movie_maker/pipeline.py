@@ -36,6 +36,14 @@ class MoviePipeline:
         image_workflow_name = self.settings.image_workflow.name
         video_workflow: Path | dict[str, Any] | None = self.settings.video_workflow
         video_workflow_name = self.settings.video_workflow.name if self.settings.video_workflow else None
+        continuation_workflow: Path | dict[str, Any] | None = (
+            self.settings.continuation_workflow
+        )
+        continuation_workflow_name = (
+            self.settings.continuation_workflow.name
+            if self.settings.continuation_workflow
+            else None
+        )
         try:
             self._update(project_id, "planning", 3, "Starting the story engine")
             llama_client: LlamaClient | None = None
@@ -122,36 +130,34 @@ class MoviePipeline:
                     if checkpoint or workflow_uses_token(image_workflow, "CHECKPOINT")
                     else ""
                 )
-                if project.request.video_workflow:
-                    if not project.request.video_workflow.startswith("saved:"):
-                        raise ApiError("Unknown ComfyUI video workflow selection.")
-                    saved_name = project.request.video_workflow.removeprefix("saved:")
-                    saved = comfy.load_saved_workflow(saved_name)
-                    description = describe_workflow(saved_name, saved)
-                    if description["format"] != "api":
-                        raise ApiError(
-                            f"'{saved_name}' is a ComfyUI UI workflow. Use File → Export "
-                            "(API), copy the exported JSON into ComfyUI's user workflow "
-                            "folder, then select it."
-                        )
-                    if description["kind"] not in {"t2v", "i2v"}:
-                        raise ApiError(f"'{saved_name}' does not appear to produce video.")
-                    video_workflow = saved
-                    video_workflow_name = saved_name
-                elif isinstance(video_workflow, Path):
-                    configured = ComfyClient.load_workflow(video_workflow, {})
-                    description = describe_workflow(video_workflow.name, configured)
-                    if description["format"] != "api":
-                        raise ApiError(
-                            f"Configured video workflow '{video_workflow}' is not in "
-                            "ComfyUI API format."
-                        )
-                    video_workflow = configured
+                video_workflow, video_workflow_name = resolve_video_workflow(
+                    comfy,
+                    project.request.video_workflow,
+                    video_workflow,
+                    role="reference",
+                )
+                continuation_workflow, continuation_workflow_name = resolve_video_workflow(
+                    comfy,
+                    project.request.continuation_workflow,
+                    continuation_workflow,
+                    role="continuation",
+                )
                 if video_workflow is None:
                     raise ApiError(
-                        "No executable ComfyUI video workflow is configured. Use File → "
-                        "Export (API) in ComfyUI, then set COMFY_VIDEO_WORKFLOW to the "
-                        "downloaded JSON or copy it into ComfyUI's user workflow folder."
+                        "No text-and-reference video workflow is configured. Export a "
+                        "ComfyUI API graph with reference-image inputs, then select it or "
+                        "set COMFY_VIDEO_WORKFLOW."
+                    )
+                long_shots = [
+                    shot
+                    for shot in plan["shots"]
+                    if shot["duration"] > self.settings.video_segment_seconds
+                ]
+                if long_shots and continuation_workflow is None:
+                    raise ApiError(
+                        f"{len(long_shots)} planned shot(s) exceed the "
+                        f"{self.settings.video_segment_seconds}-second video segment limit, "
+                        "but no text-and-reference continuation workflow is configured."
                     )
                 self.store.update(
                     project_id,
@@ -160,6 +166,8 @@ class MoviePipeline:
                         "checkpoint": effective_checkpoint or None,
                         "image_workflow": image_workflow_name,
                         "video_workflow": video_workflow_name,
+                        "continuation_workflow": continuation_workflow_name,
+                        "video_segment_seconds": self.settings.video_segment_seconds,
                         "audio_workflow": (
                             self.settings.audio_workflow.name
                             if self.settings.audio_workflow
@@ -168,7 +176,7 @@ class MoviePipeline:
                     },
                 )
 
-            assets = self._generate_assets(
+            assets, reference_files = self._generate_assets(
                 project,
                 plan,
                 workdir,
@@ -178,6 +186,14 @@ class MoviePipeline:
                 image_workflow,
             )
             self.store.update(project_id, assets=assets)
+            uploaded_references = (
+                {
+                    key: comfy.upload_image(path)
+                    for key, path in reference_files.items()
+                }
+                if comfy is not None
+                else {}
+            )
             self._render(
                 project,
                 plan,
@@ -185,9 +201,9 @@ class MoviePipeline:
                 comfy,
                 media,
                 assets,
-                effective_checkpoint,
-                image_workflow,
                 video_workflow,
+                continuation_workflow,
+                uploaded_references,
             )
 
             # Publish the completed state and URL atomically so a polling browser
@@ -225,7 +241,7 @@ class MoviePipeline:
         media: MediaTools,
         checkpoint: str,
         image_workflow: Path | dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[tuple[str, str], Path]]:
         image_dir = workdir / "references"
         image_dir.mkdir(exist_ok=True)
         subjects = [
@@ -235,7 +251,10 @@ class MoviePipeline:
             ("setting", item["name"], item["description"])
             for item in plan["settings"]
         ]
+        if not any(kind == "setting" for kind, _, _ in subjects):
+            subjects.append(("setting", "Main setting", plan["overview"]))
         assets: list[dict[str, Any]] = []
+        reference_files: dict[tuple[str, str], Path] = {}
         total = max(1, len(subjects))
         for index, (kind, name, description) in enumerate(subjects):
             progress = 30 + round(15 * index / total)
@@ -266,8 +285,9 @@ class MoviePipeline:
                     "url": f"/media/{project.id}/references/{destination.name}",
                 }
             )
+            reference_files[(kind, name)] = destination
             self.store.update(project.id, assets=list(assets))
-        return assets
+        return assets, reference_files
 
     def _render(
         self,
@@ -277,9 +297,9 @@ class MoviePipeline:
         comfy: ComfyClient | None,
         media: MediaTools,
         assets: list[dict[str, Any]],
-        checkpoint: str,
-        image_workflow: Path | dict[str, Any],
         video_workflow: Path | dict[str, Any] | None,
+        continuation_workflow: Path | dict[str, Any] | None,
+        uploaded_references: dict[tuple[str, str], str],
     ) -> None:
         width, height = RESOLUTIONS[project.request.resolution]
         shot_dir = workdir / "shots"
@@ -294,62 +314,63 @@ class MoviePipeline:
                 progress,
                 f"Rendering shot {index + 1} of {total}",
             )
-            seed = stable_seed(f"{project.id}:shot:{index}")
-            still = shot_dir / f"shot-{index + 1:02d}.png"
             prompt = shot_prompt(shot, plan)
-            if comfy is None:
-                media.placeholder(still, min(width, 1024), min(height, 1024), seed)
-            else:
-                values = image_values(
-                    prompt, seed, project.request.resolution, checkpoint
-                )
-                workflow = (
-                    image_workflow
-                    if isinstance(image_workflow, Path)
-                    else inject_api_workflow(image_workflow, values)
-                )
-                comfy.run_workflow(
-                    workflow,
-                    values,
-                    still,
-                )
-
-            clip = shot_dir / f"clip-{index + 1:02d}.mp4"
             if comfy is not None and video_workflow is not None:
-                uploaded = comfy.upload_image(still)
-                raw_clip = shot_dir / f"raw-{index + 1:02d}.mp4"
-                values = {
-                    **image_values(
-                        prompt, seed, project.request.resolution, checkpoint
-                    ),
-                    "IMAGE": uploaded,
-                    "DURATION": shot["duration"],
-                    "SECONDS": shot["duration"],
-                    "FRAMES": shot["duration"] * 24,
-                    "FPS": 24,
-                    "WIDTH": width,
-                    "HEIGHT": height,
-                }
-                workflow_template = (
-                    ComfyClient.load_workflow(video_workflow, {})
-                    if isinstance(video_workflow, Path)
-                    else video_workflow
+                references = references_for_shot(shot, uploaded_references)
+                durations = split_duration(
+                    shot["duration"], self.settings.video_segment_seconds
                 )
-                workflow = inject_api_workflow(workflow_template, values)
-                comfy.run_workflow(
-                    workflow,
-                    values,
-                    raw_clip,
-                )
-                media.normalize_clip(raw_clip, clip, shot["duration"], width, height)
+                previous_clip: Path | None = None
+                preview = shot_dir / f"shot-{index + 1:02d}.png"
+                for segment_index, duration in enumerate(durations):
+                    continuation = segment_index > 0
+                    workflow_template = (
+                        continuation_workflow if continuation else video_workflow
+                    )
+                    if workflow_template is None:
+                        raise ApiError(
+                            f"Shot {index + 1} needs {len(durations)} video segments, "
+                            "but no text-and-reference continuation workflow is configured."
+                        )
+                    keyframe: str | None = None
+                    if continuation:
+                        assert previous_clip is not None
+                        keyframe_path = shot_dir / (
+                            f"continuation-{index + 1:02d}-{segment_index + 1:02d}.png"
+                        )
+                        media.extract_last_frame(previous_clip, keyframe_path)
+                        keyframe = comfy.upload_image(keyframe_path)
+                    seed = stable_seed(
+                        f"{project.id}:shot:{index}:segment:{segment_index}"
+                    )
+                    values = video_values(
+                        prompt,
+                        seed,
+                        project.request.resolution,
+                        duration,
+                        references,
+                        keyframe,
+                    )
+                    workflow = inject_api_workflow(workflow_template, values)
+                    raw_clip = shot_dir / (
+                        f"raw-{index + 1:02d}-{segment_index + 1:02d}.mp4"
+                    )
+                    clip = shot_dir / (
+                        f"clip-{index + 1:02d}-{segment_index + 1:02d}.mp4"
+                    )
+                    comfy.run_workflow(workflow, values, raw_clip)
+                    media.normalize_clip(raw_clip, clip, duration, width, height)
+                    if segment_index == 0:
+                        media.extract_first_frame(clip, preview)
+                    clips.append(clip)
+                    previous_clip = clip
             else:
                 raise ApiError("A ComfyUI video workflow is required; still-image motion is disabled.")
-            clips.append(clip)
             assets.append(
                 {
                     "kind": "shot",
                     "name": shot["title"],
-                    "url": f"/media/{project.id}/shots/{still.name}",
+                    "url": f"/media/{project.id}/shots/{preview.name}",
                 }
             )
             self.store.update(project.id, assets=list(assets))
@@ -424,6 +445,75 @@ class JobManager:
         self.executor.shutdown(wait=False, cancel_futures=False)
 
 
+def resolve_video_workflow(
+    comfy: ComfyClient,
+    selection: str | None,
+    configured: Path | dict[str, Any] | None,
+    *,
+    role: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    workflow = configured
+    name = configured.name if isinstance(configured, Path) else None
+    if selection:
+        if not selection.startswith("saved:"):
+            raise ApiError(f"Unknown ComfyUI {role} video workflow selection.")
+        name = selection.removeprefix("saved:")
+        workflow = comfy.load_saved_workflow(name)
+    elif isinstance(workflow, Path):
+        workflow = ComfyClient.load_workflow(workflow, {})
+    if workflow is None:
+        return None, None
+
+    description = describe_workflow(name or f"configured-{role}.json", workflow)
+    if description["format"] != "api":
+        raise ApiError(
+            f"'{name or role}' is a ComfyUI UI workflow. Use File → Export (API), "
+            "copy the exported JSON into ComfyUI's user workflow folder, then select it."
+        )
+    capabilities = description["capabilities"]
+    if not capabilities["video"] or not capabilities["references"]:
+        raise ApiError(
+            f"'{name or role}' must produce video and accept reference images. "
+            "Use REFERENCE_IMAGES tokens or title its LoadImage nodes as references."
+        )
+    if role == "reference" and capabilities["keyframe"]:
+        raise ApiError(
+            f"'{name or role}' also requires a keyframe. The primary workflow must use "
+            "text and references without a starting frame."
+        )
+    if role == "continuation" and not capabilities["keyframe"]:
+        raise ApiError(
+            f"'{name or role}' must accept references plus a KEYFRAME_IMAGE input."
+        )
+    return workflow, name
+
+
+def references_for_shot(
+    shot: dict[str, Any], uploaded: dict[tuple[str, str], str]
+) -> dict[str, Any]:
+    characters = [
+        uploaded[("character", name)]
+        for name in shot.get("characters", [])
+        if ("character", name) in uploaded
+    ]
+    setting = uploaded.get(("setting", str(shot.get("setting", ""))))
+    if setting is None:
+        setting = next(
+            (filename for (kind, _), filename in uploaded.items() if kind == "setting"),
+            None,
+        )
+    references = [*characters, *([setting] if setting else [])]
+    if not references:
+        raise ApiError(f"No generated references match shot '{shot.get('title', '')}'.")
+    return {"all": references, "characters": characters, "setting": setting}
+
+
+def split_duration(duration: int, maximum: int) -> list[int]:
+    count = max(1, (duration + maximum - 1) // maximum)
+    base, extra = divmod(duration, count)
+    return [base + (1 if index < extra else 0) for index in range(count)]
+
+
 def stable_seed(value: str) -> int:
     return int.from_bytes(hashlib.sha256(value.encode()).digest()[:4], "big")
 
@@ -454,6 +544,53 @@ def image_values(prompt: str, seed: int, resolution: str, checkpoint: str) -> di
         "IMAGE_HEIGHT": height,
         "CHECKPOINT": checkpoint,
     }
+
+
+def video_values(
+    prompt: str,
+    seed: int,
+    resolution: str,
+    duration: int,
+    references: dict[str, Any],
+    keyframe: str | None = None,
+) -> dict[str, Any]:
+    width, height = RESOLUTIONS[resolution]
+    all_references = list(references["all"])
+    character_references = list(references["characters"])
+    setting_reference = references.get("setting") or all_references[-1]
+    values: dict[str, Any] = {
+        "PROMPT": prompt,
+        "NEGATIVE_PROMPT": (
+            "text, subtitles, watermark, logo, duplicate people, malformed hands, "
+            "low quality"
+        ),
+        "SEED": seed,
+        "DURATION": duration,
+        "SECONDS": duration,
+        "FRAMES": duration * 24,
+        "FPS": 24,
+        "WIDTH": width,
+        "HEIGHT": height,
+        "IMAGE_WIDTH": width,
+        "IMAGE_HEIGHT": height,
+        "REFERENCE_IMAGES": all_references,
+        "REFERENCE_IMAGE": all_references[0],
+        "SETTING_REFERENCE": setting_reference,
+    }
+    for index in range(1, 7):
+        values[f"REFERENCE_IMAGE_{index}"] = all_references[
+            min(index - 1, len(all_references) - 1)
+        ]
+    if character_references:
+        for index in range(1, 4):
+            values[f"CHARACTER_REFERENCE_{index}"] = character_references[
+                min(index - 1, len(character_references) - 1)
+            ]
+    if keyframe is not None:
+        values["KEYFRAME_IMAGE"] = keyframe
+        # Backward-compatible alias for ordinary exported I2V workflows.
+        values["IMAGE"] = keyframe
+    return values
 
 
 def workflow_uses_token(value: Any, name: str) -> bool:
@@ -506,6 +643,8 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
     prompt = values["PROMPT"]
     positive_nodes: set[str] = set()
     negative_nodes: set[str] = set()
+    reference_cursor = 1
+    character_cursor = 1
     for node in result.values():
         if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
             continue
@@ -536,8 +675,26 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
                 inputs[key] = values["FRAMES"]
             elif lowered in {"fps", "frame_rate"} and "FPS" in values:
                 inputs[key] = values["FPS"]
-            elif class_type == "loadimage" and lowered == "image" and "IMAGE" in values:
-                inputs[key] = values["IMAGE"]
+            elif class_type == "loadimage" and lowered == "image":
+                if any(word in title for word in ("keyframe", "first frame", "start frame")):
+                    if "KEYFRAME_IMAGE" in values:
+                        inputs[key] = values["KEYFRAME_IMAGE"]
+                elif "setting" in title and "SETTING_REFERENCE" in values:
+                    inputs[key] = values["SETTING_REFERENCE"]
+                elif "character" in title:
+                    match = re.search(r"(\d+)", title)
+                    index = int(match.group(1)) if match else character_cursor
+                    token = f"CHARACTER_REFERENCE_{index}"
+                    if token in values:
+                        inputs[key] = values[token]
+                    character_cursor += 1
+                elif "reference" in title:
+                    match = re.search(r"(\d+)", title)
+                    index = int(match.group(1)) if match else reference_cursor
+                    token = f"REFERENCE_IMAGE_{index}"
+                    if token in values:
+                        inputs[key] = values[token]
+                    reference_cursor += 1
             elif lowered in {"prompt", "positive_prompt"}:
                 inputs[key] = prompt
             elif lowered in {"text", "value"} and not negative and (

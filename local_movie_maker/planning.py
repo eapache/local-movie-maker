@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from .clients import LlamaClient
 from .models import ProjectRequest
+from .prompting import MediaPromptingGuides, detect_media_prompting_guides
 
 
 Progress = Callable[[str, int, str], None]
@@ -23,10 +24,12 @@ class StoryPlanner:
         client: LlamaClient | None,
         demo: bool = False,
         max_shot_seconds: int = 15,
+        prompting_guides: MediaPromptingGuides | None = None,
     ):
         self.client = client
         self.demo = demo
         self.max_shot_seconds = max(1, max_shot_seconds)
+        self.prompting_guides = prompting_guides or detect_media_prompting_guides()
 
     def create(self, request: ProjectRequest, progress: Progress) -> dict[str, Any]:
         if self.demo:
@@ -58,6 +61,9 @@ Return this shape:
             f"""Create a compact continuity bible for this short film.
 Concept: {json.dumps(concept, ensure_ascii=False)}
 
+Reference-image prompting guide:
+{self.prompting_guides.image}
+
 Return this shape:
 {{"characters":[{{"name":"...","role":"...","description":"age, face, hair, wardrobe, silhouette and colors","voice":"..."}}],
 "settings":[{{"name":"...","description":"architecture, light, palette, weather and recurring objects"}}]}}
@@ -71,6 +77,12 @@ Use at most 3 characters and 3 settings. Descriptions must let an image model re
             f"""Write the complete shot list for a {request.duration}-second generative short film.
 Concept: {json.dumps(concept, ensure_ascii=False)}
 Continuity bible: {json.dumps(bible, ensure_ascii=False)}
+
+Video prompting guide:
+{self.prompting_guides.video}
+
+Background-audio prompting guide:
+{self.prompting_guides.audio}
 
 Return this shape:
 {{"shots":[{{"title":"...","duration":4,"setting":"exact setting name","characters":["exact character name"],
@@ -120,6 +132,9 @@ Chapter durations must total exactly {request.duration} seconds.""",
             SYSTEM,
             f"""Build a continuity and production bible for this film.
 Overview: {json.dumps(concept, ensure_ascii=False)}
+
+Reference-image prompting guide:
+{self.prompting_guides.image}
 
 Return:
 {{"characters":[{{"name":"...","role":"...","description":"stable visual identity: age, face, hair, wardrobe, silhouette and colors","voice":"...","arc":"..."}}],
@@ -178,6 +193,9 @@ Film overview: {json.dumps(concept, ensure_ascii=False)}
 Continuity bible: {json.dumps(bible, ensure_ascii=False)}
 Scene: {json.dumps(scene, ensure_ascii=False)}
 
+Background-audio prompting guide:
+{self.prompting_guides.audio}
+
 Return:
 {{"scene_text":"detailed action, performance, dialogue, turning points and ending beat",
 "dialogue_beats":[{{"speaker":"exact character name","line":"...","action":"..."}}],
@@ -201,6 +219,9 @@ Film style: {json.dumps({key: concept.get(key) for key in ('tone', 'visual_style
 Continuity bible: {json.dumps(bible, ensure_ascii=False)}
 Scene: {json.dumps(scene, ensure_ascii=False)}
 Screenplay: {json.dumps(screenplay, ensure_ascii=False)}
+
+Video prompting guide:
+{self.prompting_guides.video}
 
 Return at least {minimum_shots} shots:
 {{"shots":[{{"title":"...","duration":10,"setting":"exact setting name",

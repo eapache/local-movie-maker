@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-movie-maker"
+version = "0.1.0"
+description = "A local llama.cpp, ComfyUI, and FFmpeg short-film pipeline"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+
+[project.scripts]
+local-movie-maker = "local_movie_maker.app:run"
+
+[tool.setuptools]
+packages = ["local_movie_maker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

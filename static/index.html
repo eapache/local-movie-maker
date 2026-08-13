@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0c0c0d">
+    <title>Local Movie Maker</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Local Movie Maker home">
+        <span class="brand-mark">▶</span>
+        <span>LOCAL MOVIE MAKER</span>
+      </a>
+      <span class="local-badge"><i></i> Runs on your machine</span>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">FROM ONE LINE TO FINAL CUT</p>
+        <h1>Imagine it.<br><em>Watch it unfold.</em></h1>
+        <p class="intro">Shape a short idea and your local AI studio will write, storyboard, render, score, and assemble it.</p>
+      </section>
+
+      <section class="maker-card" aria-labelledby="maker-title">
+        <div class="card-heading">
+          <div>
+            <p class="step-label">01 / THE IDEA</p>
+            <h2 id="maker-title">What should we make?</h2>
+          </div>
+          <span id="mode-badge" class="mode-badge" hidden>Demo mode</span>
+        </div>
+        <form id="movie-form">
+          <label for="prompt">Short prompt</label>
+          <textarea id="prompt" name="prompt" maxlength="1000" required placeholder="A lonely lighthouse keeper discovers the stars are answering his signals…"></textarea>
+          <div class="prompt-footer">
+            <button class="inspiration" type="button" id="inspire">↻ Inspire me</button>
+            <span id="prompt-count">0 / 1,000</span>
+          </div>
+
+          <div class="controls-grid">
+            <fieldset>
+              <legend>Length</legend>
+              <div class="length-control">
+                <input id="duration" name="duration" type="range" min="5" max="120" step="5" value="30">
+                <output id="duration-output" for="duration">30 sec</output>
+              </div>
+              <p>Longer films require more shots and render time.</p>
+            </fieldset>
+            <fieldset>
+              <legend>Resolution</legend>
+              <div class="resolution-grid" id="resolutions">
+                <label><input type="radio" name="resolution" value="540p"><span>540p<small>960 × 540</small></span></label>
+                <label><input type="radio" name="resolution" value="720p" checked><span>720p<small>1280 × 720</small></span></label>
+                <label><input type="radio" name="resolution" value="1080p"><span>1080p<small>1920 × 1080</small></span></label>
+                <label><input type="radio" name="resolution" value="vertical"><span>9:16<small>1080 × 1920</small></span></label>
+              </div>
+            </fieldset>
+          </div>
+
+          <details class="advanced" id="advanced">
+            <summary>Advanced models &amp; workflows <span id="integration-summary">Discovering local services…</span></summary>
+            <div class="advanced-grid">
+              <label>Story model
+                <select id="llama-model" name="llama_model"><option value="">Auto-select</option></select>
+                <small>Discovered from llama.cpp on port 8080.</small>
+              </label>
+              <label>Reference image checkpoint
+                <select id="checkpoint" name="checkpoint"><option value="">Auto-select</option></select>
+                <small>Discovered from ComfyUI.</small>
+              </label>
+              <label class="wide">Video workflow <b>required</b>
+                <select id="video-workflow" name="video_workflow"><option value="">Select a video workflow</option></select>
+                <small id="workflow-help">Saved ComfyUI API workflows that produce video appear here.</small>
+              </label>
+            </div>
+            <button class="refresh-integrations" id="refresh-integrations" type="button">↻ Refresh local services</button>
+          </details>
+
+          <div id="form-error" class="error-message" role="alert" hidden></div>
+          <button class="create-button" type="submit"><span>Generate my film</span><b>→</b></button>
+        </form>
+      </section>
+
+      <section id="production" class="production" hidden aria-live="polite">
+        <div class="production-head">
+          <div>
+            <p class="step-label">02 / PRODUCTION</p>
+            <h2 id="project-title">Building your film</h2>
+          </div>
+          <span id="project-status" class="status-pill">Queued</span>
+        </div>
+        <div class="progress-track"><span id="progress-bar"></span></div>
+        <div class="progress-copy"><strong id="progress-message">Waiting to begin</strong><span id="progress-value">0%</span></div>
+        <div id="stage-list" class="stage-list"></div>
+        <div id="project-error" class="error-panel" hidden></div>
+      </section>
+
+      <section id="result" class="result" hidden>
+        <div class="result-copy">
+          <p class="step-label">03 / FINAL CUT</p>
+          <h2 id="result-title">Your film</h2>
+          <p id="result-logline"></p>
+        </div>
+        <div class="screen"><video id="final-video" controls playsinline></video></div>
+        <a id="download" class="download-button" download>Download MP4 ↓</a>
+      </section>
+
+      <section id="story" class="story" hidden>
+        <div class="story-head"><p class="step-label">THE PRODUCTION BOOK</p><h2>Behind the scenes</h2></div>
+        <div id="story-overview" class="overview"></div>
+        <h3>Reference gallery</h3>
+        <div id="asset-gallery" class="asset-gallery"></div>
+        <h3>Shot list</h3>
+        <div id="shot-list" class="shot-list"></div>
+      </section>
+    </main>
+
+    <footer><span>LOCAL MOVIE MAKER</span><span>llama.cpp · ComfyUI · FFmpeg</span></footer>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

@@ -80,7 +80,12 @@ class MoviePipeline:
 
             # The LLM has finished all text work. Release it before allocating the
             # same GPU to ComfyUI.
-            self._update(project_id, "handoff", 27, "Unloading the story engine")
+            self._update(
+                project_id,
+                "references",
+                27,
+                "Switching from writing to visual references",
+            )
             if llama_service and llama_service.process is not None:
                 llama_service.stop()
             elif llama_client:

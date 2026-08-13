@@ -217,3 +217,42 @@ def test_silent_shot_prompt_forbids_model_dialogue():
 
     assert "no spoken words" in prompt
     assert "Diegetic sound only" in prompt
+
+
+def test_minimax_h3_shot_prompt_preserves_official_full_reference_shape():
+    prompt = shot_prompt(
+        {
+            "action": "Mara raises the lantern",
+            "camera": "Slow push in",
+            "dialogue": "Follow me.",
+            "sound": "Rain taps the glass roof",
+            "characters": ["Mara"],
+            "setting": "Glasshouse",
+            "prompt": "Mara slowly raises the lantern as the camera pushes in.",
+        },
+        {
+            "characters": [{"name": "Mara", "description": "Red coat, dark braid"}],
+            "settings": [
+                {"name": "Glasshouse", "description": "Iron ribs and wet glass"}
+            ],
+            "visual_style": "Cinematic live action",
+            "tone": "Tense",
+            "prompting_profiles": {"video": "minimax-h3-reference"},
+        },
+    )
+
+    sections = [
+        "subject_definitions:",
+        "summary:",
+        "retention_analysis:",
+        "detailed_description:",
+        "overall_soundscape:",
+        "non_diegetic_music:",
+    ]
+    assert [prompt.index(section) for section in sections] == sorted(
+        prompt.index(section) for section in sections
+    )
+    assert "<Subject 1> is Mara" in prompt
+    assert "<Subject 2> is Glasshouse" in prompt
+    assert "<d>[English] Follow me.</d>" in prompt
+    assert prompt.endswith("non_diegetic_music:\nN/A")

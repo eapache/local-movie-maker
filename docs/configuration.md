@@ -95,6 +95,34 @@ workflows are user-supplied. For ordinary API exports, Local Movie Maker injects
 common prompt, reference, duration, frame count, output size, FPS, and seed
 fields. Explicit placeholders support graphs with unusual field names.
 
+### Model-aware prompting
+
+Before writing, Local Movie Maker inspects the selected workflow names, node
+types, and embedded model filenames. The writer receives a model-specific guide
+for the reference-image, reference-video, and background-audio prompts. Known
+profiles currently include:
+
+- images: Krea 2, FLUX, Qwen-Image, SDXL, and Stable Diffusion;
+- video: MiniMax H3 full-reference, MiniMax/Hailuo, LTX-Video, Wan, Kling,
+  HunyuanVideo, Mochi, and CogVideoX;
+- audio: ACE-Step, Stable Audio, and AudioLDM.
+
+Unknown workflows receive conservative general-purpose guidance. Detection is
+advisory and never prevents a custom graph from running. The selected family for
+each media role is recorded under `configuration.prompting_profiles` in the
+project state.
+
+The profiles are distilled from model-author guidance where available,
+including the [Krea 2 prompting guide](https://github.com/krea-ai/krea-2/blob/main/docs/prompting.md),
+[FLUX.2 prompting guide](https://docs.bfl.ai/guides/prompting_guide_flux2),
+[Qwen-Image prompt enhancer](https://github.com/QwenLM/Qwen-Image/blob/main/src/examples/tools/prompt_utils.py),
+[MiniMax H3 full-reference guide](https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/docs/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md),
+[LTX-Video model guide](https://github.com/Lightricks/LTX-Video#prompt-engineering),
+[Wan prompt-extension instructions](https://github.com/Wan-Video/Wan2.1/blob/main/wan/utils/prompt_extend.py),
+[HunyuanVideo 1.5 prompt handbook](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md),
+the [ACE-Step musician's guide](https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/ace_step_musicians_guide.md),
+and the [Stable Audio prompt guide](https://github.com/Stability-AI/stable-audio-3/blob/main/docs/guides/prompting.md).
+
 ### Workflow placeholders
 
 Workflow files may contain `{{TOKEN}}` placeholders. A value that consists only

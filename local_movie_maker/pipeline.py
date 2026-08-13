@@ -20,6 +20,7 @@ from .config import RESOLUTIONS, Settings
 from .media import MediaTools
 from .models import Project, ProjectRequest
 from .planning import StoryPlanner
+from .prompting import detect_media_prompting_guides, detect_workflow_family
 from .services import ManagedService
 from .store import ProjectStore
 
@@ -53,9 +54,41 @@ class MoviePipeline:
             if self.settings.background_audio_workflow
             else None
         )
+        prompting_profiles = {
+            "image": "generic",
+            "video": "generic",
+            "audio": "generic",
+        }
         try:
             self._update(project_id, "overview", 3, "Starting the story engine")
             llama_client: LlamaClient | None = None
+            prompting_sources = {
+                "image": image_workflow,
+                "video": video_workflow,
+                "audio": background_audio_workflow,
+            }
+            if not self.settings.demo_mode:
+                comfy_probe = ComfyClient(
+                    self.settings.comfy_url, self.settings.comfy_timeout
+                )
+                prompting_sources = {
+                    "image": inspect_prompting_workflow(
+                        comfy_probe, project.request.image_workflow, image_workflow
+                    ),
+                    "video": inspect_prompting_workflow(
+                        comfy_probe, project.request.video_workflow, video_workflow
+                    ),
+                    "audio": inspect_prompting_workflow(
+                        comfy_probe,
+                        project.request.background_audio_workflow,
+                        background_audio_workflow,
+                    ),
+                }
+            prompting_guides = detect_media_prompting_guides(**prompting_sources)
+            prompting_profiles = {
+                role: detect_workflow_family(role, source)
+                for role, source in prompting_sources.items()
+            }
             if not self.settings.demo_mode:
                 llama_service = ManagedService(
                     "llama",
@@ -72,12 +105,16 @@ class MoviePipeline:
                 effective_model = llama_client.resolve_model()
                 self.store.update(
                     project_id,
-                    configuration={"llama_model": effective_model},
+                    configuration={
+                        "llama_model": effective_model,
+                        "prompting_profiles": prompting_profiles,
+                    },
                 )
             planner = StoryPlanner(
                 llama_client,
                 demo=self.settings.demo_mode,
                 max_shot_seconds=self.settings.video_segment_seconds,
+                prompting_guides=prompting_guides,
             )
             plan = planner.create(
                 project.request,
@@ -85,6 +122,7 @@ class MoviePipeline:
                     project_id, stage, progress, message
                 ),
             )
+            plan["prompting_profiles"] = prompting_profiles
             self.store.update(project_id, plan=plan)
 
             # The LLM has finished all text work. Release it before allocating the
@@ -190,6 +228,7 @@ class MoviePipeline:
                         "video_workflow": video_workflow_name,
                         "video_segment_seconds": self.settings.video_segment_seconds,
                         "background_audio_workflow": background_audio_workflow_name,
+                        "prompting_profiles": prompting_profiles,
                     },
                 )
 
@@ -424,6 +463,32 @@ class JobManager:
         self.executor.shutdown(wait=False, cancel_futures=False)
 
 
+def inspect_prompting_workflow(
+    comfy: ComfyClient,
+    selection: str | None,
+    configured: Path | dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Collect a workflow signature without making prompt detection a hard preflight."""
+    name = selection or (
+        configured.name if isinstance(configured, Path) else "configured"
+    )
+    source: dict[str, Any] = {"name": name}
+    try:
+        if selection and selection.startswith("saved:"):
+            source["workflow"] = comfy.load_saved_workflow(
+                selection.removeprefix("saved:"), timeout=5
+            )
+        elif isinstance(configured, Path):
+            source["workflow"] = ComfyClient.load_workflow(configured, {})
+        elif isinstance(configured, dict):
+            source["workflow"] = configured
+    except ApiError:
+        # The normal workflow-resolution pass reports unavailable or invalid
+        # graphs later. A filename can still identify a known model family.
+        pass
+    return source
+
+
 def resolve_video_workflow(
     comfy: ComfyClient,
     selection: str | None,
@@ -644,6 +709,14 @@ def shot_prompt(shot: dict[str, Any], plan: dict[str, Any]) -> str:
     direction = shot.get("prompt") or (
         f"{shot['action']} Camera: {shot['camera']}."
     )
+    if plan.get("prompting_profiles", {}).get("video") == "minimax-h3-reference":
+        return minimax_h3_shot_prompt(
+            shot,
+            plan,
+            str(direction),
+            character_details,
+            setting_details,
+        )
     dialogue = str(shot.get("dialogue", "")).strip()
     sound = str(shot.get("sound", "Natural ambience")).strip()
     if dialogue:
@@ -660,6 +733,71 @@ def shot_prompt(shot: dict[str, Any], plan: dict[str, Any]) -> str:
         f"{audio_direction} Do not generate music, score, a soundtrack, singing, or vocals. "
         "Background music is added separately in post-production. "
         "Cohesive character design, cinematic lighting, no text, no subtitles."
+    )
+
+
+def minimax_h3_shot_prompt(
+    shot: dict[str, Any],
+    plan: dict[str, Any],
+    direction: str,
+    character_details: dict[str, str],
+    setting_details: dict[str, str],
+) -> str:
+    required_sections = (
+        "subject_definitions:",
+        "summary:",
+        "retention_analysis:",
+        "detailed_description:",
+        "overall_soundscape:",
+        "non_diegetic_music:",
+    )
+    if all(section in direction for section in required_sections):
+        return direction
+
+    subjects = [
+        (str(name), character_details.get(str(name), str(name)))
+        for name in shot.get("characters", [])
+    ]
+    setting_name = str(shot.get("setting", "Main setting"))
+    subjects.append(
+        (setting_name, setting_details.get(setting_name, setting_name))
+    )
+    definitions = "\n".join(
+        f"<Subject {index}> is {name}: {description}."
+        for index, (name, description) in enumerate(subjects, 1)
+    )
+    labels = ", ".join(
+        f"<Subject {index}>" for index in range(1, len(subjects) + 1)
+    )
+    retention = "\n".join(
+        f"<Subject {index}> (appears in [Shot 1]): fully_preserved - preserve the "
+        f"defined identity and visual features of {name}."
+        for index, (name, _description) in enumerate(subjects, 1)
+    )
+    dialogue = str(shot.get("dialogue", "")).strip()
+    sound = str(shot.get("sound", "Natural ambience")).strip()
+    if dialogue:
+        speaker = (
+            "<Subject 1> (S1)"
+            if shot.get("characters")
+            else "An off-screen voice (S1)"
+        )
+        dialogue_direction = (
+            f" {speaker} says, <d>[English] {dialogue}</d>. No other voice is heard."
+        )
+    else:
+        dialogue_direction = " No one speaks or sings."
+    style = str(plan.get("visual_style", "Cinematic"))
+    tone = str(plan.get("tone", ""))
+    return (
+        f"subject_definitions:\n{definitions}\n\n"
+        f"summary:\n[reference generation] A single continuous shot uses {labels} "
+        f"in a {style} presentation.\n\n"
+        f"retention_analysis:\n{retention}\n\n"
+        f"detailed_description:\n[Shot 1] {style}, {tone}. {direction}"
+        f"{dialogue_direction}\n\n"
+        f"overall_soundscape:\n{sound}.\n\n"
+        "non_diegetic_music:\nN/A"
     )
 
 

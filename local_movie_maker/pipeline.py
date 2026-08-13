@@ -45,7 +45,7 @@ class MoviePipeline:
             else None
         )
         try:
-            self._update(project_id, "planning", 3, "Starting the story engine")
+            self._update(project_id, "overview", 3, "Starting the story engine")
             llama_client: LlamaClient | None = None
             if not self.settings.demo_mode:
                 llama_service = ManagedService(
@@ -72,8 +72,8 @@ class MoviePipeline:
             )
             plan = planner.create(
                 project.request,
-                lambda progress, message: self._update(
-                    project_id, "planning", progress, message
+                lambda stage, progress, message: self._update(
+                    project_id, stage, progress, message
                 ),
             )
             self.store.update(project_id, plan=plan)
@@ -615,8 +615,11 @@ def shot_prompt(shot: dict[str, Any], plan: dict[str, Any]) -> str:
         f"{name}: {character_details.get(name, name)}" for name in shot.get("characters", [])
     )
     setting = setting_details.get(shot.get("setting"), shot.get("setting", ""))
+    direction = shot.get("prompt") or (
+        f"{shot['action']} Camera: {shot['camera']}."
+    )
     return (
-        f"Film still. {shot['action']} Camera: {shot['camera']}. "
+        f"Film shot. {direction} "
         f"Setting: {setting}. Characters: {cast or 'none'}. "
         f"Visual language: {plan['visual_style']}. Tone: {plan['tone']}. "
         "Cohesive character design, cinematic lighting, no text, no subtitles."

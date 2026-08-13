@@ -10,10 +10,18 @@ const submitButton = form.querySelector('button[type="submit"]');
 let pollTimer = null;
 let currentProject = null;
 
-const durationChoices = Array.from({length: 24}, (_, index) => (index + 1) * 5);
+const durationChoices = [
+  ...Array.from({length: 24}, (_, index) => (index + 1) * 5),
+  ...Array.from({length: 6}, (_, index) => 150 + index * 30),
+  ...Array.from({length: 10}, (_, index) => 360 + index * 60),
+  ...Array.from({length: 15}, (_, index) => 1_200 + index * 300),
+];
 
 const stages = [
-  ['planning', 'Writing'],
+  ['overview', 'Overview'],
+  ['bible', 'Story bible'],
+  ['screenplay', 'Screenplay'],
+  ['shotlist', 'Shot planning'],
   ['handoff', 'GPU handoff'],
   ['references', 'References'],
   ['shots', 'Rendering'],
@@ -21,8 +29,9 @@ const stages = [
 ];
 
 const stageOrder = {
-  queued: -1, planning: 0, handoff: 1, references: 2, shots: 3,
-  soundtrack: 4, assembly: 4, complete: 5, failed: -1,
+  queued: -1, planning: 0, overview: 0, bible: 1, screenplay: 2, shotlist: 3,
+  handoff: 4, references: 5, shots: 6, soundtrack: 7, assembly: 7,
+  complete: 8, failed: -1,
 };
 
 function setText(selector, value) {

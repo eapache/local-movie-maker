@@ -39,7 +39,12 @@ export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
 python3 run.py
 ```
 
-For every queued film, the app starts llama.cpp, makes three structured planning calls, and terminates it. Only then does it start ComfyUI. The ComfyUI process is also stopped when the film is finished. GPU-heavy projects run one at a time.
+For every queued film, the app starts llama.cpp and completes all structured writing before
+starting ComfyUI. Films up to five minutes use a compact treatment/bible/shot-list path.
+Longer films use a hierarchical path: a multi-page overview and chapters, a larger continuity
+bible, scene lists for each chapter, a written screenplay for every scene, and independently
+prompted shots for every scene. The ComfyUI process is stopped when the film is finished.
+GPU-heavy projects run one at a time.
 
 If the services run elsewhere, use `LLAMA_URL` and `COMFY_URL`. With current llama.cpp router builds, the selected model is autoloaded and then released through `/models/unload` before ComfyUI rendering. Classic single-model servers fall back to clearing their context slots; `LLAMA_UNLOAD_URL` can override that behavior. See [.env.example](.env.example) for every option.
 
@@ -119,7 +124,9 @@ is present. No synthetic media is substituted for missing generative models.
 prompt + duration + resolution
              │
              ▼
-  treatment → continuity bible → timed shot script     llama.cpp
+  overview + chapters → continuity bible              llama.cpp
+             │
+  scene lists → per-scene scripts → prompted shots     llama.cpp
              │
              ▼  model/context released
   all character + setting reference images            ComfyUI image phase
@@ -142,4 +149,5 @@ Generated state is updated atomically in `projects/<id>/project.json`. If the ap
 - `GET /api/projects` — returns the 20 most recent projects.
 - `GET /media/<id>/...` — serves generated project media with video byte-range support.
 
-Resolution ids are `540p`, `720p`, `1080p`, `vertical`, and `square`; the current UI presents the first four.
+Duration may be from 5 seconds through 90 minutes. Resolution ids are `540p`,
+`720p`, `1080p`, `vertical`, and `square`; the current UI presents the first four.

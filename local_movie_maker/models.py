@@ -31,8 +31,8 @@ class ProjectRequest:
             duration = int(value.get("duration", 30))
         except (TypeError, ValueError) as exc:
             raise ValueError("Length must be a whole number of seconds.") from exc
-        if not 5 <= duration <= 300:
-            raise ValueError("Length must be between 5 seconds and 5 minutes.")
+        if not 5 <= duration <= 5_400:
+            raise ValueError("Length must be between 5 seconds and 90 minutes.")
         resolution = str(value.get("resolution", "720p"))
         if resolution not in RESOLUTIONS:
             raise ValueError(f"Resolution must be one of: {', '.join(RESOLUTIONS)}.")

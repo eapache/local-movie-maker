@@ -49,7 +49,7 @@
               <div class="resolution-grid" id="resolutions">
                 <label><input type="radio" name="resolution" value="540p"><span>540p<small>960 × 540</small></span></label>
                 <label><input type="radio" name="resolution" value="720p" checked><span>720p<small>1280 × 720</small></span></label>
-                <label><input type="radio" name="resolution" value="1080p"><span>1080p landscape<small>16:9 · 1920 × 1080</small></span></label>
+                <label><input type="radio" name="resolution" value="1080p"><span>1080p<small>1920 × 1080</small></span></label>
               </div>
             </fieldset>
           </div>
@@ -57,19 +57,19 @@
           <details class="advanced" id="advanced">
             <summary><span class="advanced-title">Advanced models &amp; workflows</span><span id="integration-summary" role="status">Discovering local services…</span></summary>
             <div class="advanced-grid">
-              <label>Story model <b>required</b>
+              <label>Story model
                 <select id="llama-model" name="llama_model"><option value="">Select a story model</option></select>
                 <small>Discovered from llama.cpp on port 8080.</small>
               </label>
-              <label>Reference image workflow <b>required</b>
+              <label>Reference image workflow
                 <select id="image-workflow" name="image_workflow"><option value="">Select an image workflow</option></select>
                 <small id="image-workflow-help">Saved ComfyUI T2I API workflows appear here.</small>
               </label>
-              <label>Reference video workflow <b>required</b>
+              <label>Reference video workflow
                 <select id="video-workflow" name="video_workflow"><option value="">Select a video workflow</option></select>
                 <small id="workflow-help">Text + character/setting references. Used to begin every shot.</small>
               </label>
-              <label>Background audio workflow <b>required</b>
+              <label>Background audio workflow
                 <select id="background-audio-workflow" name="background_audio_workflow"><option value="">Select an audio workflow</option></select>
                 <small>Text-to-audio ambience or music. One track can span several shots; video audio supplies dialogue.</small>
               </label>

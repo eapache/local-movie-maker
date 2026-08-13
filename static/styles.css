@@ -136,7 +136,6 @@ output { color: var(--acid); font: 500 14px ui-monospace, SFMono-Regular, Menlo,
 .advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 5px 0 24px; }
 .advanced-grid label { display: grid; gap: 9px; }
 .advanced-grid label.wide { grid-column: 1 / -1; }
-.advanced-grid label b { color: var(--orange); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
 .advanced-grid select { width: 100%; min-width: 0; color: var(--ink); background: #101012; border: 1px solid #444247; padding: 12px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .advanced-grid small { color: #77757a; font-size: 10px; line-height: 1.5; }
 .workflow-export-help { margin: 0 0 22px; padding: 13px 15px; border-left: 2px solid #555259; color: #8f8c85; background: #101012; font-size: 10px; line-height: 1.6; }

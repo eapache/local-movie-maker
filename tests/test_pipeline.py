@@ -6,6 +6,7 @@ from local_movie_maker.pipeline import (
     MoviePipeline,
     image_values,
     inject_api_workflow,
+    planned_audio_cues,
     references_for_shot,
     video_values,
     workflow_uses_token,
@@ -104,3 +105,33 @@ def test_shot_references_are_deterministic():
     )
 
     assert references["all"] == ["pip.png", "mars.png"]
+
+
+def test_background_audio_cue_can_span_multiple_shots():
+    cues = planned_audio_cues(
+        {
+            "shots": [{"duration": 4}, {"duration": 6}, {"duration": 5}],
+            "background_audio": [
+                {"start_shot": 2, "end_shot": 3, "prompt": "Rain on windows"}
+            ],
+        }
+    )
+    assert cues == [{"prompt": "Rain on windows", "start": 4, "duration": 11}]
+
+
+def test_audio_workflow_injection_does_not_require_image_dimensions():
+    workflow = {
+        "prompt": {
+            "class_type": "PrimitiveString",
+            "inputs": {"value": "old prompt", "seconds": 1, "seed": 1},
+            "_meta": {"title": "Positive Prompt"},
+        },
+        "output": {"class_type": "SaveAudio", "inputs": {}},
+    }
+    values = {"PROMPT": "Forest at night", "DURATION": 12, "SEED": 42}
+    result = inject_api_workflow(workflow, values)
+    assert result["prompt"]["inputs"] == {
+        "value": "Forest at night",
+        "seconds": 12,
+        "seed": 42,
+    }

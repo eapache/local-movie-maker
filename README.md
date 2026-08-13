@@ -3,8 +3,8 @@
 A small, local-first web studio that turns a short prompt into a finished video. It uses:
 
 - **llama.cpp** for the treatment, continuity bible, characters, locations, and shot script.
-- **ComfyUI** for reference art, shot keyframes, and optionally native video and music.
-- **FFmpeg** for consistent clip formatting, soundtrack fallback, and final assembly.
+- **ComfyUI** for reference art, native video with dialogue, and optional background audio.
+- **FFmpeg** for consistent clip formatting, dialogue-aware audio mixing, and final assembly.
 
 The browser shows live progress, the generated production book, reference images, shot list, and a downloadable MP4. Projects and intermediate media are kept on disk in `projects/`.
 
@@ -92,13 +92,15 @@ shots; no continuation or prior-keyframe workflow is used. LoadImage nodes may
 alternatively be titled **Character Reference 1** or **Setting Reference** for
 automatic injection.
 
-Audio workflows receive `{{PROMPT}}`, `{{DURATION}}`, `{{SECONDS}}`, and `{{SEED}}`.
+Background-audio workflows receive `{{PROMPT}}`, `{{DURATION}}`, `{{SECONDS}}`,
+and `{{SEED}}`. The planner creates scene-sized cues, so a single generated
+ambience or music track can span several shots.
 
 Set the optional workflow paths before starting the app:
 
 ```bash
 export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
-export COMFY_AUDIO_WORKFLOW="$PWD/workflows/my-audio-api.json"
+export COMFY_BACKGROUND_AUDIO_WORKFLOW="$PWD/workflows/my-background-audio-api.json"
 python3 run.py
 ```
 
@@ -107,8 +109,9 @@ ComfyUI installations and video/audio node packs vary substantially, which is wh
 All character and setting images are generated before any video job is queued, so
 ComfyUI can keep the image model hot and then transition to video generation only
 once. References are uploaded once and reused across every matching shot. Audio
-produced by a video workflow is preserved; an optional audio workflow can supply
-a separate score. No synthetic media is substituted for missing generative models.
+produced by a video workflow is preserved for dialogue and diegetic sound. Optional
+background tracks are mixed underneath it at a lower level and ducked when dialogue
+is present. No synthetic media is substituted for missing generative models.
 
 ## Pipeline
 
@@ -123,7 +126,7 @@ prompt + duration + resolution
              │
              ▼
   text + relevant refs → capped video clips            ComfyUI video phase
-             └──────── score ───────────────────────── ComfyUI or fallback
+             └── scene-spanning background audio ───── ComfyUI T2A
                               │
                               ▼
                          final.mp4                      FFmpeg
@@ -133,7 +136,7 @@ Generated state is updated atomically in `projects/<id>/project.json`. If the ap
 
 ## HTTP API
 
-- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, and `video_workflow` selections.
+- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, `video_workflow`, and `background_audio_workflow` selections.
 - `GET /api/integrations` — discovers llama.cpp models, ComfyUI checkpoints, and saved workflows.
 - `GET /api/projects/<id>` — returns status, progress, plan, assets, errors, and final URL.
 - `GET /api/projects` — returns the 20 most recent projects.

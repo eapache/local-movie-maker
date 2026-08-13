@@ -36,6 +36,14 @@ class MoviePipeline:
         image_workflow_name = self.settings.image_workflow.name
         video_workflow: Path | dict[str, Any] | None = self.settings.video_workflow
         video_workflow_name = self.settings.video_workflow.name if self.settings.video_workflow else None
+        background_audio_workflow: Path | dict[str, Any] | None = (
+            self.settings.background_audio_workflow
+        )
+        background_audio_workflow_name = (
+            self.settings.background_audio_workflow.name
+            if self.settings.background_audio_workflow
+            else None
+        )
         try:
             self._update(project_id, "planning", 3, "Starting the story engine")
             llama_client: LlamaClient | None = None
@@ -138,6 +146,13 @@ class MoviePipeline:
                         "ComfyUI API graph with reference-image inputs, then select it or "
                         "set COMFY_VIDEO_WORKFLOW."
                     )
+                background_audio_workflow, background_audio_workflow_name = (
+                    resolve_audio_workflow(
+                        comfy,
+                        project.request.background_audio_workflow,
+                        background_audio_workflow,
+                    )
+                )
                 if any(
                     shot["duration"] > self.settings.video_segment_seconds
                     for shot in plan["shots"]
@@ -154,11 +169,7 @@ class MoviePipeline:
                         "image_workflow": image_workflow_name,
                         "video_workflow": video_workflow_name,
                         "video_segment_seconds": self.settings.video_segment_seconds,
-                        "audio_workflow": (
-                            self.settings.audio_workflow.name
-                            if self.settings.audio_workflow
-                            else None
-                        ),
+                        "background_audio_workflow": background_audio_workflow_name,
                     },
                 )
 
@@ -188,6 +199,7 @@ class MoviePipeline:
                 media,
                 assets,
                 video_workflow,
+                background_audio_workflow,
                 uploaded_references,
             )
 
@@ -283,6 +295,7 @@ class MoviePipeline:
         media: MediaTools,
         assets: list[dict[str, Any]],
         video_workflow: Path | dict[str, Any] | None,
+        background_audio_workflow: Path | dict[str, Any] | None,
         uploaded_references: dict[tuple[str, str], str],
     ) -> None:
         width, height = RESOLUTIONS[project.request.resolution]
@@ -328,40 +341,31 @@ class MoviePipeline:
             )
             self.store.update(project.id, assets=list(assets))
 
-        self._update(project.id, "soundtrack", 87, "Composing the soundtrack")
-        score: Path | None = None
-        if comfy is not None and self.settings.audio_workflow:
-            score = workdir / "score.m4a"
-            raw_score = workdir / "generated-score.wav"
-            comfy.run_workflow(
-                self.settings.audio_workflow,
-                {
-                    "PROMPT": plan["music_prompt"],
-                    "DURATION": project.request.duration,
-                    "SECONDS": project.request.duration,
-                    "SEED": stable_seed(f"{project.id}:score"),
-                },
-                raw_score,
-            )
-            # Re-encode to a consistently supported assembly format.
-            media._run(
-                [
-                    media.ffmpeg,
-                    "-y",
-                    "-i",
-                    str(raw_score),
-                    "-t",
-                    str(project.request.duration),
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "192k",
-                    str(score),
-                ]
-            )
+        self._update(project.id, "soundtrack", 87, "Creating background audio")
+        background_layers: list[tuple[Path, float, float]] = []
+        if comfy is not None and background_audio_workflow is not None:
+            for cue_index, cue in enumerate(planned_audio_cues(plan)):
+                self._update(
+                    project.id,
+                    "soundtrack",
+                    87 + round(5 * cue_index / max(1, len(plan["background_audio"]))),
+                    f"Creating background track {cue_index + 1}",
+                )
+                raw_track = workdir / f"background-{cue_index + 1:02d}.wav"
+                track = workdir / f"background-{cue_index + 1:02d}.m4a"
+                values = {
+                    "PROMPT": cue["prompt"],
+                    "DURATION": cue["duration"],
+                    "SECONDS": cue["duration"],
+                    "SEED": stable_seed(f"{project.id}:background:{cue_index}"),
+                }
+                workflow = inject_api_workflow(background_audio_workflow, values)
+                comfy.run_workflow(workflow, values, raw_track)
+                media.normalize_audio(raw_track, track, cue["duration"])
+                background_layers.append((track, cue["start"], cue["duration"]))
 
         self._update(project.id, "assembly", 94, "Stitching the final cut")
-        media.assemble(clips, score, workdir / "final.mp4")
+        media.assemble(clips, background_layers, workdir / "final.mp4")
 
     def _update(
         self,
@@ -435,6 +439,57 @@ def resolve_video_workflow(
             "text and references without a starting frame."
         )
     return workflow, name
+
+
+def resolve_audio_workflow(
+    comfy: ComfyClient,
+    selection: str | None,
+    configured: Path | dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    workflow = configured
+    name = configured.name if isinstance(configured, Path) else None
+    if selection:
+        if not selection.startswith("saved:"):
+            raise ApiError("Unknown ComfyUI background audio workflow selection.")
+        name = selection.removeprefix("saved:")
+        workflow = comfy.load_saved_workflow(name)
+    elif isinstance(workflow, Path):
+        workflow = ComfyClient.load_workflow(workflow, {})
+    if workflow is None:
+        return None, None
+    description = describe_workflow(name or "configured-background-audio.json", workflow)
+    if description["format"] != "api":
+        raise ApiError(
+            f"'{name or 'background audio'}' is a ComfyUI UI workflow. Use File → "
+            "Export (API), copy the exported JSON into ComfyUI's user workflow "
+            "folder, then select it."
+        )
+    if description["kind"] != "audio":
+        raise ApiError(f"'{name or 'background audio'}' must produce audio.")
+    return workflow, name
+
+
+def planned_audio_cues(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    shots = plan.get("shots", [])
+    result: list[dict[str, Any]] = []
+    for cue in plan.get("background_audio", []):
+        if not isinstance(cue, dict) or not shots:
+            continue
+        start_index = max(0, min(len(shots) - 1, int(cue.get("start_shot", 1)) - 1))
+        end_index = max(start_index, min(len(shots) - 1, int(cue.get("end_shot", len(shots))) - 1))
+        prompt = str(cue.get("prompt", "")).strip()
+        if not prompt:
+            continue
+        result.append(
+            {
+                "prompt": prompt,
+                "start": sum(shot["duration"] for shot in shots[:start_index]),
+                "duration": sum(
+                    shot["duration"] for shot in shots[start_index : end_index + 1]
+                ),
+            }
+        )
+    return result
 
 
 def references_for_shot(
@@ -603,9 +658,9 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
             lowered = key.lower()
             if lowered in {"seed", "noise_seed"}:
                 inputs[key] = values["SEED"]
-            elif lowered in {"width", "image_width"}:
+            elif lowered in {"width", "image_width"} and "WIDTH" in values:
                 inputs[key] = values["WIDTH"]
-            elif lowered in {"height", "image_height"}:
+            elif lowered in {"height", "image_height"} and "HEIGHT" in values:
                 inputs[key] = values["HEIGHT"]
             elif lowered in {"duration", "seconds"} and "DURATION" in values:
                 inputs[key] = values["DURATION"]

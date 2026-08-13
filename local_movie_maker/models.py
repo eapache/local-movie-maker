@@ -20,6 +20,7 @@ class ProjectRequest:
     checkpoint: str | None = None
     image_workflow: str | None = None
     video_workflow: str | None = None
+    background_audio_workflow: str | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ProjectRequest":
@@ -41,6 +42,9 @@ class ProjectRequest:
             value.get("image_workflow"), "ComfyUI image workflow"
         )
         video_workflow = _optional_name(value.get("video_workflow"), "ComfyUI video workflow")
+        background_audio_workflow = _optional_name(
+            value.get("background_audio_workflow"), "ComfyUI background audio workflow"
+        )
         return cls(
             prompt=prompt,
             duration=duration,
@@ -49,6 +53,7 @@ class ProjectRequest:
             checkpoint=checkpoint,
             image_workflow=image_workflow,
             video_workflow=video_workflow,
+            background_audio_workflow=background_audio_workflow,
         )
 
 

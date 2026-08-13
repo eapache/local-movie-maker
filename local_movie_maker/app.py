@@ -63,7 +63,9 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                         for key, size in RESOLUTIONS.items()
                     ],
                     "video_workflow": bool(self.app.settings.video_workflow),
-                    "audio_workflow": bool(self.app.settings.audio_workflow),
+                    "background_audio_workflow": bool(
+                        self.app.settings.background_audio_workflow
+                    ),
                     "llama_model": self.app.settings.llama_model,
                     "checkpoint": self.app.settings.checkpoint,
                 }
@@ -105,7 +107,11 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                 "workflows": {
                     "image": settings.image_workflow.name,
                     "video": settings.video_workflow.name if settings.video_workflow else None,
-                    "audio": settings.audio_workflow.name if settings.audio_workflow else None,
+                    "background_audio": (
+                        settings.background_audio_workflow.name
+                        if settings.background_audio_workflow
+                        else None
+                    ),
                 },
                 "saved_workflows": [],
             },

@@ -70,7 +70,7 @@ Return this shape:
 {{"shots":[{{"title":"...","duration":4,"setting":"exact setting name","characters":["exact character name"],
 "action":"visible action during this shot","camera":"framing and camera movement","dialogue":"spoken line or empty string",
 "sound":"diegetic sound","transition":"cut, dissolve, etc."}}],
-"music_prompt":"instrumentation, tempo, mood and progression","credits":"short credit line"}}
+"background_audio_prompt":"ambience, music, instrumentation, tempo, mood and progression","credits":"short credit line"}}
 Their durations must total exactly {request.duration} seconds. No shot may exceed
 {self.max_shot_seconds} seconds; add cuts instead of continuing a shot. Keep every shot visually achievable.""",
         )
@@ -144,7 +144,16 @@ def normalize_plan(
         "characters": characters,
         "settings": settings,
         "shots": shots,
-        "music_prompt": _text(script.get("music_prompt"), "Subtle cinematic ambient score"),
+        "background_audio": [
+            {
+                "start_shot": 1,
+                "end_shot": len(shots),
+                "prompt": _text(
+                    script.get("background_audio_prompt") or script.get("music_prompt"),
+                    "Subtle cinematic ambience and score",
+                ),
+            }
+        ],
         "credits": _text(script.get("credits"), "Created with Local Movie Maker"),
     }
 
@@ -270,7 +279,7 @@ def demo_plan(request: ProjectRequest, max_shot_seconds: int = 15) -> dict[str, 
             }
             for index in range(shot_count)
         ],
-        "music_prompt": "Gentle felt piano and airy strings, 72 BPM, growing wonder, soft resolved ending",
+        "background_audio_prompt": "Gentle felt piano, airy strings and natural ambience, 72 BPM, growing wonder, soft resolved ending",
         "credits": "Created locally with Local Movie Maker",
     }
     return normalize_plan(

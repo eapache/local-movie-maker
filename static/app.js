@@ -67,6 +67,7 @@ form.addEventListener('submit', async (event) => {
     llama_model: $('#llama-model').value || null,
     image_workflow: $('#image-workflow').value || null,
     video_workflow: $('#video-workflow').value || null,
+    background_audio_workflow: $('#background-audio-workflow').value || null,
   };
   try {
     const response = await fetch('/api/projects', {
@@ -281,11 +282,30 @@ async function loadIntegrations() {
       !integrations.comfy.workflows.video,
     );
 
+    const backgroundAudioWorkflows = [];
+    if (integrations.comfy.workflows.background_audio) {
+      backgroundAudioWorkflows.push({
+        value: '',
+        label: `Configured: ${integrations.comfy.workflows.background_audio}`,
+      });
+    }
+    integrations.comfy.saved_workflows
+      .filter((workflow) => workflow.kind === 'audio')
+      .forEach((workflow) => backgroundAudioWorkflows.push({
+        value: workflow.id,
+        label: `${workflow.name} · T2A${workflow.executable ? '' : ' · UI format (Export API)'}`,
+        disabled: !workflow.executable,
+      }));
+    backgroundAudioWorkflows.sort((left, right) => Number(left.disabled) - Number(right.disabled));
+    fillSelect($('#background-audio-workflow'), backgroundAudioWorkflows, null);
+
     const llamaOK = integrations.llama.models.length > 0;
     const executableImages = imageWorkflows.filter((item) => !item.disabled);
     const imageOK = Boolean(integrations.comfy.workflows.image) || executableImages.length > 0;
     const videoOK = Boolean(integrations.comfy.workflows.video) || videoWorkflows.some((item) => item.value && !item.disabled);
-    summary.textContent = `${llamaOK ? integrations.llama.models.length : 0} LLMs · ${executableImages.length} image workflows · ${videoOK ? 'reference video ready' : 'reference video workflow needed'}`;
+    const audioOK = Boolean(integrations.comfy.workflows.background_audio)
+      || backgroundAudioWorkflows.some((item) => item.value && !item.disabled);
+    summary.textContent = `${llamaOK ? integrations.llama.models.length : 0} LLMs · ${executableImages.length} image workflows · ${videoOK ? 'reference video ready' : 'reference video workflow needed'} · ${audioOK ? 'background audio ready' : 'no background audio'}`;
     $('#image-workflow-help').textContent = executableImages.length
       ? 'Executable T2I workflows are preferred; the configured image workflow remains available as a fallback.'
       : imageWorkflows.length

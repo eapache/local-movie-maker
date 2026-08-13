@@ -42,8 +42,13 @@ class Settings:
     video_segment_seconds: int = max(
         1, int(os.getenv("COMFY_VIDEO_SEGMENT_SECONDS", "15"))
     )
-    audio_workflow: Path | None = (
-        Path(value) if (value := os.getenv("COMFY_AUDIO_WORKFLOW")) else None
+    background_audio_workflow: Path | None = (
+        Path(value)
+        if (
+            value := os.getenv("COMFY_BACKGROUND_AUDIO_WORKFLOW")
+            or os.getenv("COMFY_AUDIO_WORKFLOW")
+        )
+        else None
     )
     # Empty means: discover the first installed checkpoint from ComfyUI.
     checkpoint: str | None = os.getenv("COMFY_CHECKPOINT") or None

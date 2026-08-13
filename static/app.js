@@ -198,12 +198,24 @@ function renderResult(project) {
 
 async function init() {
   updateDuration();
+
+  // Discovery should not depend on the unrelated config request succeeding.
+  // In particular, opening the HTML directly or receiving a stale response must
+  // produce a visible error instead of leaving the initial status there forever.
+  const integrationsPromise = loadIntegrations();
   try {
     const response = await fetch('/api/config');
+    if (!response.ok) throw new Error('Could not load application configuration.');
     const config = await response.json();
     $('#mode-badge').hidden = !config.demo_mode;
-    await loadIntegrations();
+  } catch (_) {
+    // Integration discovery reports its own actionable connection error.
+  }
+
+  await integrationsPromise;
+  try {
     const projectsResponse = await fetch('/api/projects');
+    if (!projectsResponse.ok) throw new Error('Could not load projects.');
     const {projects} = await projectsResponse.json();
     const latest = projects?.[0];
     if (latest && ['queued', 'running'].includes(latest.status)) {
@@ -219,8 +231,13 @@ async function init() {
 async function loadIntegrations() {
   const summary = $('#integration-summary');
   summary.textContent = 'Discovering local services…';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch('/api/integrations', {cache: 'no-store'});
+    const response = await fetch('/api/integrations', {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
     const integrations = await response.json();
     if (!response.ok) throw new Error(integrations.error || 'Discovery failed.');
     fillSelect(
@@ -257,8 +274,12 @@ async function loadIntegrations() {
     if (!llamaOK || !comfyOK || !videoOK) $('#advanced').open = true;
   } catch (error) {
     summary.textContent = 'Local service discovery failed';
-    $('#workflow-help').textContent = error.message;
+    $('#workflow-help').textContent = error.name === 'AbortError'
+      ? 'Discovery timed out. Check that the local server can reach llama.cpp and ComfyUI, then refresh.'
+      : `${error.message} Make sure this page was opened from the Local Movie Maker server, not as a file.`;
     $('#advanced').open = true;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

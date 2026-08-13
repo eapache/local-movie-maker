@@ -128,7 +128,13 @@ output { color: var(--acid); font: 500 14px ui-monospace, SFMono-Regular, Menlo,
 
 .advanced { margin: -18px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .advanced summary { cursor: pointer; padding: 20px 0; font-size: 13px; font-weight: 600; }
-.advanced summary span { float: right; color: #77757a; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 400; }
+.advanced-title { margin-left: 4px; }
+#integration-summary {
+  display: block;
+  margin: 7px 0 0 18px;
+  color: #8d8a8f;
+  font: 400 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 5px 0 24px; }
 .advanced-grid label { display: grid; gap: 9px; }
 .advanced-grid label.wide { grid-column: 1 / -1; }

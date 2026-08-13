@@ -4,6 +4,7 @@ import json
 import mimetypes
 import re
 import signal
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -112,18 +113,28 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
         if settings.demo_mode:
             self._json(result)
             return
-        try:
-            result["llama"]["models"] = LlamaClient(
-                settings.llama_url
-            ).available_models(timeout=5)
-        except ApiError as exc:
-            result["llama"]["error"] = str(exc)
-        try:
+
+        def discover_comfy() -> tuple[list[str], list[dict[str, Any]]]:
             comfy = ComfyClient(settings.comfy_url)
-            result["comfy"]["checkpoints"] = comfy.available_checkpoints(timeout=5)
-            result["comfy"]["saved_workflows"] = comfy.saved_workflows(timeout=5)
-        except ApiError as exc:
-            result["comfy"]["error"] = str(exc)
+            return comfy.available_checkpoints(timeout=5), comfy.saved_workflows(timeout=5)
+
+        # The services are independent. Probe them together so an unavailable
+        # llama.cpp instance does not delay the ComfyUI result (or vice versa).
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            llama_future = executor.submit(
+                LlamaClient(settings.llama_url).available_models, timeout=5
+            )
+            comfy_future = executor.submit(discover_comfy)
+            try:
+                result["llama"]["models"] = llama_future.result()
+            except ApiError as exc:
+                result["llama"]["error"] = str(exc)
+            try:
+                checkpoints, saved_workflows = comfy_future.result()
+                result["comfy"]["checkpoints"] = checkpoints
+                result["comfy"]["saved_workflows"] = saved_workflows
+            except ApiError as exc:
+                result["comfy"]["error"] = str(exc)
         self._json(result)
 
     def do_POST(self) -> None:  # noqa: N802
@@ -160,7 +171,9 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
         if not candidate.is_relative_to(root) or not candidate.is_file():
             self._error(HTTPStatus.NOT_FOUND, "Not found")
             return
-        self._serve_file(candidate, cache="public, max-age=3600")
+        # This app is commonly updated and restarted in place. Revalidate assets so
+        # a fresh HTML document cannot be paired with an hour-old script or stylesheet.
+        self._serve_file(candidate, cache="no-cache")
 
     def _serve_media(self, project_id: str, relative: str) -> None:
         project = self.app.store.get(project_id)

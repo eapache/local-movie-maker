@@ -7,8 +7,12 @@ const production = $('#production');
 const result = $('#result');
 const story = $('#story');
 const submitButton = form.querySelector('button[type="submit"]');
+const projectsToggle = $('#projects-toggle');
+const projectsSidebar = $('#project-sidebar');
+const sidebarBackdrop = $('#sidebar-backdrop');
 let pollTimer = null;
 let currentProject = null;
+let projectHistory = [];
 
 const durationChoices = [
   ...Array.from({length: 24}, (_, index) => (index + 1) * 5),
@@ -58,6 +62,141 @@ function formatDuration(seconds) {
   const remainder = seconds % 60;
   return remainder ? `${minutes} min ${remainder} sec` : `${minutes} min`;
 }
+
+function formatProjectDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(date);
+}
+
+function projectLabel(project) {
+  return project.plan?.title || project.request?.prompt || 'Untitled project';
+}
+
+function projectStatus(project) {
+  const value = project.status === 'running' ? project.stage : project.status;
+  return String(value || 'unknown').replaceAll('_', ' ');
+}
+
+function renderProjectHistory(emptyMessage = '') {
+  const history = $('#project-history');
+  history.replaceChildren();
+  $('#project-count').textContent = String(projectHistory.length);
+
+  if (!projectHistory.length) {
+    const empty = document.createElement('p');
+    empty.className = 'project-history-empty';
+    empty.textContent = emptyMessage || 'No projects yet. Your finished and in-progress films will appear here.';
+    history.append(empty);
+    return;
+  }
+
+  projectHistory.forEach((project) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'project-history-item';
+    button.dataset.projectId = project.id;
+    button.setAttribute('aria-current', project.id === currentProject ? 'true' : 'false');
+    button.setAttribute('aria-label', `Load ${projectLabel(project)}`);
+
+    const heading = document.createElement('span');
+    heading.className = 'project-history-title';
+    const title = document.createElement('strong');
+    title.textContent = projectLabel(project);
+    const status = document.createElement('span');
+    status.className = `project-history-status status-${project.status}`;
+    status.textContent = projectStatus(project);
+    heading.append(title, status);
+
+    const meta = document.createElement('span');
+    meta.className = 'project-history-meta';
+    meta.textContent = [
+      formatProjectDate(project.created_at),
+      project.request?.duration ? formatDuration(project.request.duration) : null,
+      project.request?.resolution,
+    ].filter(Boolean).join(' · ');
+    button.append(heading, meta);
+    button.addEventListener('click', () => reloadProject(project.id));
+    history.append(button);
+  });
+}
+
+function rememberProject(project) {
+  projectHistory = [project, ...projectHistory.filter((item) => item.id !== project.id)]
+    .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+    .slice(0, 20);
+  renderProjectHistory();
+  setText('#project-history-status', `${projectHistory.length} recent project${projectHistory.length === 1 ? '' : 's'}`);
+}
+
+async function loadProjects() {
+  const refresh = $('#projects-refresh');
+  refresh.disabled = true;
+  setText('#project-history-status', 'Refreshing projects…');
+  try {
+    const response = await fetch('/api/projects', {cache: 'no-store'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not load projects.');
+    projectHistory = Array.isArray(data.projects) ? data.projects : [];
+    renderProjectHistory();
+    setText('#project-history-status', `${projectHistory.length} recent project${projectHistory.length === 1 ? '' : 's'}`);
+  } catch (error) {
+    setText('#project-history-status', 'Archive unavailable');
+    if (!projectHistory.length) renderProjectHistory(error.message);
+  } finally {
+    refresh.disabled = false;
+  }
+  return projectHistory;
+}
+
+function setProjectSidebar(open, returnFocus = true) {
+  projectsToggle.setAttribute('aria-expanded', String(open));
+  projectsSidebar.setAttribute('aria-hidden', String(!open));
+  projectsSidebar.inert = !open;
+  projectsSidebar.classList.toggle('is-open', open);
+  sidebarBackdrop.classList.toggle('is-open', open);
+  document.body.classList.toggle('sidebar-open', open);
+  if (open) {
+    $('#projects-close').focus();
+  } else if (returnFocus) {
+    projectsToggle.focus();
+  }
+}
+
+async function reloadProject(projectId) {
+  setText('#project-history-status', 'Opening project…');
+  try {
+    const response = await fetch(`/api/projects/${projectId}`, {cache: 'no-store'});
+    const project = await response.json();
+    if (!response.ok) throw new Error(project.error || 'Could not load the project.');
+    clearTimeout(pollTimer);
+    currentProject = project.id;
+    renderProject(project);
+    setProjectSidebar(false, false);
+    if (project.status !== 'complete') {
+      production.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+    if (project.status === 'queued' || project.status === 'running') pollProject();
+  } catch (error) {
+    setText('#project-history-status', error.message);
+  }
+}
+
+projectsToggle.addEventListener('click', () => {
+  const open = projectsToggle.getAttribute('aria-expanded') !== 'true';
+  setProjectSidebar(open);
+  if (open) loadProjects();
+});
+$('#projects-close').addEventListener('click', () => setProjectSidebar(false));
+$('#projects-refresh').addEventListener('click', loadProjects);
+sidebarBackdrop.addEventListener('click', () => setProjectSidebar(false));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && projectsToggle.getAttribute('aria-expanded') === 'true') {
+    setProjectSidebar(false);
+  }
+});
 
 duration.addEventListener('input', updateDuration);
 prompt.addEventListener('input', () => setText('#prompt-count', `${prompt.value.length} / 1,000`));
@@ -111,15 +250,18 @@ form.addEventListener('submit', async (event) => {
 async function pollProject() {
   clearTimeout(pollTimer);
   if (!currentProject) return;
+  const projectId = currentProject;
   try {
-    const response = await fetch(`/api/projects/${currentProject}`, {cache: 'no-store'});
+    const response = await fetch(`/api/projects/${projectId}`, {cache: 'no-store'});
     const project = await response.json();
     if (!response.ok) throw new Error(project.error || 'Could not read project status.');
+    if (projectId !== currentProject) return;
     renderProject(project);
     if (project.status === 'queued' || project.status === 'running') {
       pollTimer = setTimeout(pollProject, 1200);
     }
   } catch (error) {
+    if (projectId !== currentProject) return;
     $('#project-error').hidden = false;
     setText('#project-error', error.message);
     pollTimer = setTimeout(pollProject, 3000);
@@ -140,13 +282,19 @@ function renderProject(project) {
   error.hidden = !project.error;
   error.textContent = project.error || '';
 
+  story.hidden = !plan;
   if (plan) renderStory(plan, project.assets || []);
   if (project.status === 'complete') {
     submitButton.disabled = false;
     renderResult(project);
   } else if (project.status === 'failed') {
     submitButton.disabled = false;
+    result.hidden = true;
+  } else {
+    submitButton.disabled = true;
+    result.hidden = true;
   }
+  rememberProject(project);
 }
 
 function renderStages(active) {
@@ -229,6 +377,7 @@ async function init() {
   // In particular, opening the HTML directly or receiving a stale response must
   // produce a visible error instead of leaving the initial status there forever.
   const integrationsPromise = loadIntegrations();
+  const projectsPromise = loadProjects();
   try {
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error('Could not load application configuration.');
@@ -238,20 +387,14 @@ async function init() {
     // Integration discovery reports its own actionable connection error.
   }
 
-  await integrationsPromise;
-  try {
-    const projectsResponse = await fetch('/api/projects');
-    if (!projectsResponse.ok) throw new Error('Could not load projects.');
-    const {projects} = await projectsResponse.json();
-    const latest = projects?.[0];
-    if (latest && ['queued', 'running'].includes(latest.status)) {
-      currentProject = latest.id;
-      renderProject(latest);
-      pollProject();
-    }
-  } catch (_) {
-    // The form can still surface a useful error if initial discovery fails.
+  const projects = await projectsPromise;
+  const latest = projects[0];
+  if (latest && ['queued', 'running'].includes(latest.status)) {
+    currentProject = latest.id;
+    renderProject(latest);
+    pollProject();
   }
+  await integrationsPromise;
 }
 
 async function loadIntegrations() {

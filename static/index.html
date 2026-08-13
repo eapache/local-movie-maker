@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0c0c0d">
     <title>Local Movie Maker</title>
-    <link rel="stylesheet" href="static/styles.css?v=5">
+    <link rel="stylesheet" href="static/styles.css?v=6">
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -14,8 +14,29 @@
         <span class="brand-mark">▶</span>
         <span>LOCAL MOVIE MAKER</span>
       </a>
-      <span class="local-badge"><i></i> Local studio</span>
+      <div class="header-actions">
+        <span class="local-badge"><i></i> Local studio</span>
+        <button id="projects-toggle" class="projects-toggle" type="button" aria-controls="project-sidebar" aria-expanded="false">
+          <span>Past projects</span><b id="project-count">0</b>
+        </button>
+      </div>
     </header>
+
+    <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+    <aside id="project-sidebar" class="project-sidebar" aria-labelledby="project-sidebar-title" aria-hidden="true" inert>
+      <div class="project-sidebar-head">
+        <div>
+          <p class="step-label">LOCAL ARCHIVE</p>
+          <h2 id="project-sidebar-title">Past projects</h2>
+        </div>
+        <button id="projects-close" class="projects-close" type="button" aria-label="Close past projects">×</button>
+      </div>
+      <div class="project-sidebar-tools">
+        <span id="project-history-status" role="status">Loading projects…</span>
+        <button id="projects-refresh" type="button">↻ Refresh</button>
+      </div>
+      <div id="project-history" class="project-history"></div>
+    </aside>
 
     <main>
       <section class="maker-card" aria-labelledby="maker-title">
@@ -118,6 +139,6 @@
     </main>
 
     <footer><span>LOCAL MOVIE MAKER</span><span>llama.cpp · ComfyUI · FFmpeg</span></footer>
-    <script src="static/app.js?v=5" defer></script>
+    <script src="static/app.js?v=6" defer></script>
   </body>
 </html>

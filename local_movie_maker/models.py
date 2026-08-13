@@ -18,6 +18,7 @@ class ProjectRequest:
     resolution: str
     llama_model: str | None = None
     checkpoint: str | None = None
+    image_workflow: str | None = None
     video_workflow: str | None = None
 
     @classmethod
@@ -36,6 +37,9 @@ class ProjectRequest:
             raise ValueError(f"Resolution must be one of: {', '.join(RESOLUTIONS)}.")
         llama_model = _optional_name(value.get("llama_model"), "llama.cpp model")
         checkpoint = _optional_name(value.get("checkpoint"), "ComfyUI checkpoint")
+        image_workflow = _optional_name(
+            value.get("image_workflow"), "ComfyUI image workflow"
+        )
         video_workflow = _optional_name(value.get("video_workflow"), "ComfyUI video workflow")
         return cls(
             prompt=prompt,
@@ -43,6 +47,7 @@ class ProjectRequest:
             resolution=resolution,
             llama_model=llama_model,
             checkpoint=checkpoint,
+            image_workflow=image_workflow,
             video_workflow=video_workflow,
         )
 

@@ -65,7 +65,7 @@ form.addEventListener('submit', async (event) => {
     duration: Number(duration.value),
     resolution: new FormData(form).get('resolution'),
     llama_model: $('#llama-model').value || null,
-    checkpoint: $('#checkpoint').value || null,
+    image_workflow: $('#image-workflow').value || null,
     video_workflow: $('#video-workflow').value || null,
   };
   try {
@@ -245,33 +245,49 @@ async function loadIntegrations() {
       integrations.llama.models.map((name) => ({value: name, label: name})),
       integrations.llama.configured,
     );
-    fillSelect(
-      $('#checkpoint'),
-      integrations.comfy.checkpoints.map((name) => ({value: name, label: name})),
-      integrations.comfy.configured,
-    );
+    const imageWorkflows = integrations.comfy.saved_workflows
+      .filter((workflow) => workflow.kind === 'image')
+      .map((workflow) => ({
+        value: workflow.id,
+        label: `${workflow.name}${workflow.executable ? '' : ' · UI format (Export API)'}`,
+        disabled: !workflow.executable,
+      }))
+      .sort((left, right) => Number(left.disabled) - Number(right.disabled));
+    fillSelect($('#image-workflow'), imageWorkflows, null);
 
-    const workflows = [];
+    const videoWorkflows = [];
     if (integrations.comfy.workflows.video) {
-      workflows.push({value: '', label: `Configured: ${integrations.comfy.workflows.video}`});
+      videoWorkflows.push({value: '', label: `Configured: ${integrations.comfy.workflows.video}`});
     }
     integrations.comfy.saved_workflows
       .filter((workflow) => ['t2v', 'i2v'].includes(workflow.kind))
-      .forEach((workflow) => workflows.push({
+      .forEach((workflow) => videoWorkflows.push({
         value: workflow.id,
-        label: `${workflow.name} · ${workflow.kind.toUpperCase()}${workflow.executable ? '' : ' · UI format (export API)'}`,
+        label: `${workflow.name} · ${workflow.kind.toUpperCase()}${workflow.executable ? '' : ' · UI format (Export API)'}`,
         disabled: !workflow.executable,
       }));
-    fillSelect($('#video-workflow'), workflows, null, !integrations.comfy.workflows.video);
+    videoWorkflows.sort((left, right) => Number(left.disabled) - Number(right.disabled));
+    fillSelect(
+      $('#video-workflow'),
+      videoWorkflows,
+      null,
+      !integrations.comfy.workflows.video,
+    );
 
     const llamaOK = integrations.llama.models.length > 0;
-    const comfyOK = integrations.comfy.checkpoints.length > 0;
-    const videoOK = Boolean(integrations.comfy.workflows.video) || workflows.some((item) => item.value && !item.disabled);
-    summary.textContent = `${llamaOK ? integrations.llama.models.length : 0} LLMs · ${comfyOK ? integrations.comfy.checkpoints.length : 0} checkpoints · ${videoOK ? 'video ready' : 'video workflow needed'}`;
+    const executableImages = imageWorkflows.filter((item) => !item.disabled);
+    const imageOK = Boolean(integrations.comfy.workflows.image) || executableImages.length > 0;
+    const videoOK = Boolean(integrations.comfy.workflows.video) || videoWorkflows.some((item) => item.value && !item.disabled);
+    summary.textContent = `${llamaOK ? integrations.llama.models.length : 0} LLMs · ${executableImages.length} image workflows · ${videoOK ? 'video ready' : 'video workflow needed'}`;
+    $('#image-workflow-help').textContent = executableImages.length
+      ? 'Executable T2I workflows are preferred; the configured image workflow remains available as a fallback.'
+      : imageWorkflows.length
+        ? 'File → Export (API) downloads JSON. Copy it back as *-api.json under ComfyUI/user/default/workflows (or the active user folder), then refresh.'
+        : `No saved T2I API workflows found; using configured ${integrations.comfy.workflows.image}.`;
     $('#workflow-help').textContent = videoOK
       ? 'The selected API workflow will receive each shot prompt, keyframe, duration, dimensions, FPS, and seed.'
-      : 'Saved UI workflows were found, but ComfyUI only executes API-format graphs remotely. In Dev Mode, use Save (API Format), then refresh.';
-    if (!llamaOK || !comfyOK || !videoOK) $('#advanced').open = true;
+      : 'File → Export (API) downloads JSON. Copy it back as *-api.json under ComfyUI/user/default/workflows (or the active user folder), then refresh.';
+    if (!llamaOK || !imageOK || !videoOK) $('#advanced').open = true;
   } catch (error) {
     summary.textContent = 'Local service discovery failed';
     $('#workflow-help').textContent = error.name === 'AbortError'

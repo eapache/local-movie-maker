@@ -114,9 +114,20 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
             self._json(result)
             return
 
-        def discover_comfy() -> tuple[list[str], list[dict[str, Any]]]:
+        def discover_comfy() -> tuple[list[str], list[dict[str, Any]], list[str]]:
             comfy = ComfyClient(settings.comfy_url)
-            return comfy.available_checkpoints(timeout=5), comfy.saved_workflows(timeout=5)
+            checkpoints: list[str] = []
+            saved_workflows: list[dict[str, Any]] = []
+            errors: list[str] = []
+            try:
+                checkpoints = comfy.available_checkpoints(timeout=5)
+            except ApiError as exc:
+                errors.append(str(exc))
+            try:
+                saved_workflows = comfy.saved_workflows(timeout=5)
+            except ApiError as exc:
+                errors.append(str(exc))
+            return checkpoints, saved_workflows, errors
 
         # The services are independent. Probe them together so an unavailable
         # llama.cpp instance does not delay the ComfyUI result (or vice versa).
@@ -129,12 +140,10 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                 result["llama"]["models"] = llama_future.result()
             except ApiError as exc:
                 result["llama"]["error"] = str(exc)
-            try:
-                checkpoints, saved_workflows = comfy_future.result()
-                result["comfy"]["checkpoints"] = checkpoints
-                result["comfy"]["saved_workflows"] = saved_workflows
-            except ApiError as exc:
-                result["comfy"]["error"] = str(exc)
+            checkpoints, saved_workflows, errors = comfy_future.result()
+            result["comfy"]["checkpoints"] = checkpoints
+            result["comfy"]["saved_workflows"] = saved_workflows
+            result["comfy"]["error"] = "; ".join(errors) or None
         self._json(result)
 
     def do_POST(self) -> None:  # noqa: N802

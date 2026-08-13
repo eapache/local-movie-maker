@@ -32,6 +32,8 @@ class MoviePipeline:
         comfy_service: ManagedService | None = None
         effective_model = "demo"
         effective_checkpoint = "demo"
+        image_workflow: Path | dict[str, Any] = self.settings.image_workflow
+        image_workflow_name = self.settings.image_workflow.name
         video_workflow: Path | dict[str, Any] | None = self.settings.video_workflow
         video_workflow_name = self.settings.video_workflow.name if self.settings.video_workflow else None
         try:
@@ -85,8 +87,40 @@ class MoviePipeline:
                 )
                 comfy_service.start()
                 comfy = ComfyClient(self.settings.comfy_url, self.settings.comfy_timeout)
-                effective_checkpoint = comfy.resolve_checkpoint(
-                    project.request.checkpoint or self.settings.checkpoint
+                if project.request.image_workflow:
+                    if not project.request.image_workflow.startswith("saved:"):
+                        raise ApiError("Unknown ComfyUI image workflow selection.")
+                    saved_name = project.request.image_workflow.removeprefix("saved:")
+                    saved = comfy.load_saved_workflow(saved_name)
+                    description = describe_workflow(saved_name, saved)
+                    if description["format"] != "api":
+                        raise ApiError(
+                            f"'{saved_name}' is a ComfyUI UI workflow. Use File → "
+                            "Export (API), copy the exported JSON into ComfyUI's user "
+                            "workflow folder, then select it."
+                        )
+                    if description["kind"] != "image":
+                        raise ApiError(f"'{saved_name}' does not appear to produce images.")
+                    image_workflow = saved
+                    image_workflow_name = saved_name
+                elif isinstance(image_workflow, Path):
+                    configured_image = ComfyClient.load_workflow(image_workflow, {})
+                    description = describe_workflow(image_workflow.name, configured_image)
+                    if description["format"] != "api" or description["kind"] != "image":
+                        raise ApiError(
+                            f"Configured image workflow '{image_workflow}' is not an "
+                            "executable ComfyUI image API graph."
+                        )
+                    image_workflow = configured_image
+
+                checkpoint = project.request.checkpoint or self.settings.checkpoint
+                # Exported API workflows normally contain their own model loaders.
+                # Resolve a raw checkpoint only when the graph explicitly requests
+                # our CHECKPOINT token or the legacy API supplied an override.
+                effective_checkpoint = (
+                    comfy.resolve_checkpoint(checkpoint)
+                    if checkpoint or workflow_uses_token(image_workflow, "CHECKPOINT")
+                    else ""
                 )
                 if project.request.video_workflow:
                     if not project.request.video_workflow.startswith("saved:"):
@@ -96,8 +130,9 @@ class MoviePipeline:
                     description = describe_workflow(saved_name, saved)
                     if description["format"] != "api":
                         raise ApiError(
-                            f"'{saved_name}' is a ComfyUI UI workflow. Export it with "
-                            "Save (API Format), then select the exported workflow."
+                            f"'{saved_name}' is a ComfyUI UI workflow. Use File → Export "
+                            "(API), copy the exported JSON into ComfyUI's user workflow "
+                            "folder, then select it."
                         )
                     if description["kind"] not in {"t2v", "i2v"}:
                         raise ApiError(f"'{saved_name}' does not appear to produce video.")
@@ -114,15 +149,16 @@ class MoviePipeline:
                     video_workflow = configured
                 if video_workflow is None:
                     raise ApiError(
-                        "No executable ComfyUI video workflow is configured. Export a video "
-                        "workflow with Save (API Format), or set COMFY_VIDEO_WORKFLOW."
+                        "No executable ComfyUI video workflow is configured. Use File → "
+                        "Export (API) in ComfyUI, then set COMFY_VIDEO_WORKFLOW to the "
+                        "downloaded JSON or copy it into ComfyUI's user workflow folder."
                     )
                 self.store.update(
                     project_id,
                     configuration={
                         "llama_model": effective_model,
-                        "checkpoint": effective_checkpoint,
-                        "image_workflow": self.settings.image_workflow.name,
+                        "checkpoint": effective_checkpoint or None,
+                        "image_workflow": image_workflow_name,
                         "video_workflow": video_workflow_name,
                         "audio_workflow": (
                             self.settings.audio_workflow.name
@@ -133,7 +169,13 @@ class MoviePipeline:
                 )
 
             assets = self._generate_assets(
-                project, plan, workdir, comfy, media, effective_checkpoint
+                project,
+                plan,
+                workdir,
+                comfy,
+                media,
+                effective_checkpoint,
+                image_workflow,
             )
             self.store.update(project_id, assets=assets)
             self._render(
@@ -144,6 +186,7 @@ class MoviePipeline:
                 media,
                 assets,
                 effective_checkpoint,
+                image_workflow,
                 video_workflow,
             )
 
@@ -181,6 +224,7 @@ class MoviePipeline:
         comfy: ComfyClient | None,
         media: MediaTools,
         checkpoint: str,
+        image_workflow: Path | dict[str, Any],
     ) -> list[dict[str, Any]]:
         image_dir = workdir / "references"
         image_dir.mkdir(exist_ok=True)
@@ -202,9 +246,17 @@ class MoviePipeline:
             if comfy is None:
                 media.placeholder(destination, 1024, 576, seed)
             else:
+                values = image_values(
+                    prompt, seed, project.request.resolution, checkpoint
+                )
+                workflow = (
+                    image_workflow
+                    if isinstance(image_workflow, Path)
+                    else inject_api_workflow(image_workflow, values)
+                )
                 comfy.run_workflow(
-                    self.settings.image_workflow,
-                    image_values(prompt, seed, project.request.resolution, checkpoint),
+                    workflow,
+                    values,
                     destination,
                 )
             assets.append(
@@ -226,6 +278,7 @@ class MoviePipeline:
         media: MediaTools,
         assets: list[dict[str, Any]],
         checkpoint: str,
+        image_workflow: Path | dict[str, Any],
         video_workflow: Path | dict[str, Any] | None,
     ) -> None:
         width, height = RESOLUTIONS[project.request.resolution]
@@ -247,9 +300,17 @@ class MoviePipeline:
             if comfy is None:
                 media.placeholder(still, min(width, 1024), min(height, 1024), seed)
             else:
+                values = image_values(
+                    prompt, seed, project.request.resolution, checkpoint
+                )
+                workflow = (
+                    image_workflow
+                    if isinstance(image_workflow, Path)
+                    else inject_api_workflow(image_workflow, values)
+                )
                 comfy.run_workflow(
-                    self.settings.image_workflow,
-                    image_values(prompt, seed, project.request.resolution, checkpoint),
+                    workflow,
+                    values,
                     still,
                 )
 
@@ -395,6 +456,19 @@ def image_values(prompt: str, seed: int, resolution: str, checkpoint: str) -> di
     }
 
 
+def workflow_uses_token(value: Any, name: str) -> bool:
+    token = f"{{{{{name}}}}}"
+
+    def uses_token(item: Any) -> bool:
+        if isinstance(item, dict):
+            return any(uses_token(child) for child in item.values())
+        if isinstance(item, list):
+            return any(uses_token(child) for child in item)
+        return isinstance(item, str) and token in item
+
+    return uses_token(value)
+
+
 def reference_prompt(kind: str, name: str, description: str, visual_style: str) -> str:
     if kind == "character":
         framing = "character reference sheet, full body and close portrait, neutral pose, plain studio backdrop"
@@ -430,13 +504,24 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
     """
     result = replace_workflow_tokens(workflow, values)
     prompt = values["PROMPT"]
+    positive_nodes: set[str] = set()
+    negative_nodes: set[str] = set()
     for node in result.values():
+        if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+            continue
+        for key, targets in (("positive", positive_nodes), ("negative", negative_nodes)):
+            link = node["inputs"].get(key)
+            if isinstance(link, list) and link:
+                targets.add(str(link[0]))
+
+    for node_id, node in result.items():
         if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
             continue
         inputs = node["inputs"]
         class_type = str(node.get("class_type", "")).lower()
         title = str(node.get("_meta", {}).get("title", "")).lower()
-        negative = "negative" in title
+        negative = str(node_id) in negative_nodes or "negative" in title
+        positive = str(node_id) in positive_nodes or "positive" in title or "prompt" in title
         for key in list(inputs):
             lowered = key.lower()
             if lowered in {"seed", "noise_seed"}:
@@ -445,21 +530,18 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
                 inputs[key] = values["WIDTH"]
             elif lowered in {"height", "image_height"}:
                 inputs[key] = values["HEIGHT"]
-            elif lowered in {"duration", "seconds"}:
+            elif lowered in {"duration", "seconds"} and "DURATION" in values:
                 inputs[key] = values["DURATION"]
-            elif lowered in {"frames", "num_frames", "length"}:
+            elif lowered in {"frames", "num_frames", "length"} and "FRAMES" in values:
                 inputs[key] = values["FRAMES"]
-            elif lowered in {"fps", "frame_rate"}:
+            elif lowered in {"fps", "frame_rate"} and "FPS" in values:
                 inputs[key] = values["FPS"]
-            elif class_type == "loadimage" and lowered == "image":
+            elif class_type == "loadimage" and lowered == "image" and "IMAGE" in values:
                 inputs[key] = values["IMAGE"]
             elif lowered in {"prompt", "positive_prompt"}:
                 inputs[key] = prompt
             elif lowered in {"text", "value"} and not negative and (
-                "prompt" in title
-                or "positive" in title
-                or "textencode" in class_type
-                or "primitivestring" in class_type
+                positive or "textencode" in class_type or "primitivestring" in class_type
             ):
                 inputs[key] = prompt
     return result

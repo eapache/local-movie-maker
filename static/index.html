@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0c0c0d">
     <title>Local Movie Maker</title>
-    <link rel="stylesheet" href="static/styles.css?v=2">
+    <link rel="stylesheet" href="static/styles.css?v=3">
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -67,9 +67,9 @@
                 <select id="llama-model" name="llama_model"><option value="">Auto-select</option></select>
                 <small>Discovered from llama.cpp on port 8080.</small>
               </label>
-              <label>Reference image checkpoint
-                <select id="checkpoint" name="checkpoint"><option value="">Auto-select</option></select>
-                <small>Discovered from ComfyUI.</small>
+              <label>Reference image workflow
+                <select id="image-workflow" name="image_workflow"><option value="">Use configured image workflow</option></select>
+                <small id="image-workflow-help">Saved ComfyUI T2I API workflows appear here.</small>
               </label>
               <label class="wide">Video workflow <b>required</b>
                 <select id="video-workflow" name="video_workflow"><option value="">Select a video workflow</option></select>
@@ -119,6 +119,6 @@
     </main>
 
     <footer><span>LOCAL MOVIE MAKER</span><span>llama.cpp · ComfyUI · FFmpeg</span></footer>
-    <script src="static/app.js?v=2" defer></script>
+    <script src="static/app.js?v=3" defer></script>
   </body>
 </html>

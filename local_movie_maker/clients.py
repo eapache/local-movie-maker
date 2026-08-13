@@ -447,6 +447,6 @@ def describe_workflow(name: str, workflow: dict[str, Any]) -> dict[str, Any]:
         "error": (
             None
             if workflow_format == "api"
-            else "Saved in UI format; export it with Save (API Format) to make it executable."
+            else "Saved in UI format; use File → Export (API) to make it executable."
         ),
     }

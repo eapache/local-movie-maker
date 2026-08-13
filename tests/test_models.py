@@ -6,9 +6,15 @@ from local_movie_maker.planning import normalize_plan
 
 def test_project_request_validation():
     request = ProjectRequest.from_dict(
-        {"prompt": "A small story", "duration": "30", "resolution": "720p"}
+        {
+            "prompt": "A small story",
+            "duration": "30",
+            "resolution": "720p",
+            "image_workflow": "saved:portrait-api.json",
+        }
     )
     assert request.duration == 30
+    assert request.image_workflow == "saved:portrait-api.json"
 
     with pytest.raises(ValueError, match="Prompt"):
         ProjectRequest.from_dict({"prompt": "x", "duration": 30, "resolution": "720p"})

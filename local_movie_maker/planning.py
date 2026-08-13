@@ -40,7 +40,7 @@ class StoryPlanner:
         if request.duration > 300:
             return self._create_long_form(request, progress)
 
-        width_hint = "vertical framing" if request.resolution == "vertical" else "cinematic framing"
+        width_hint = "cinematic framing"
         progress("overview", 8, "Expanding the idea into a film treatment")
         concept = self.client.complete_json(
             SYSTEM,
@@ -89,9 +89,7 @@ Their durations must total exactly {request.duration} seconds. No shot may excee
         self, request: ProjectRequest, progress: Progress
     ) -> dict[str, Any]:
         assert self.client is not None
-        width_hint = (
-            "vertical framing" if request.resolution == "vertical" else "cinematic framing"
-        )
+        width_hint = "cinematic framing"
         chapter_count = max(2, min(9, math.ceil(request.duration / 900)))
         progress("overview", 5, "Developing the long-form overview")
         concept = self.client.complete_json(

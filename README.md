@@ -3,7 +3,7 @@
 A small, local-first web studio that turns a short prompt into a finished video. It uses:
 
 - **llama.cpp** for the treatment, continuity bible, characters, locations, and shot script.
-- **ComfyUI** for reference art, native video with dialogue, and optional background audio.
+- **ComfyUI** for reference art, native video with dialogue, and background audio.
 - **FFmpeg** for consistent clip formatting, dialogue-aware audio mixing, and final assembly.
 
 The browser shows live progress, the generated production book, reference images, shot list, and a downloadable MP4. Projects and intermediate media are kept on disk in `projects/`.
@@ -28,14 +28,16 @@ pytest -q
 
 ## Connect llama.cpp and ComfyUI
 
-No model names are hard-coded. By default the app reads llama.cpp's `/v1/models` (including router presets) and ComfyUI's saved workflows. Executable T2I workflows are preferred for reference images and shot keyframes; the included checkpoint-based image workflow remains the fallback. A choice in the Advanced panel applies to that film; environment variables set machine-wide defaults.
+No model names or workflows are hard-coded. The app reads llama.cpp's `/v1/models` (including router presets) and ComfyUI's saved workflows. The story model and executable reference-image, reference-video, and background-audio workflows are all required. A choice in the Advanced panel applies to that film; environment variables set machine-wide defaults.
 
 The easiest setup when the services are not already running and both systems share a GPU is to let this app own their processes:
 
 ```bash
 export LLAMA_SERVER_COMMAND='/opt/llama.cpp/llama-server -m /models/writer.gguf --host 127.0.0.1 --port 8080'
 export COMFY_SERVER_COMMAND='python3 /opt/ComfyUI/main.py --listen 127.0.0.1 --port 8188'
+export COMFY_IMAGE_WORKFLOW="$PWD/workflows/my-image-api.json"
 export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
+export COMFY_BACKGROUND_AUDIO_WORKFLOW="$PWD/workflows/my-background-audio-api.json"
 python3 run.py
 ```
 
@@ -50,7 +52,7 @@ If the services run elsewhere, use `LLAMA_URL` and `COMFY_URL`. With current lla
 
 ## ComfyUI workflows
 
-The included [`workflows/image.json`](workflows/image.json) uses standard ComfyUI nodes and whichever installed checkpoint is selected. It is a fallback: when the app discovers an executable saved T2I workflow, the browser selects that workflow instead. Set `COMFY_IMAGE_WORKFLOW` to an exported API JSON file to replace the built-in fallback; it remains available as **Use configured image workflow** in the Advanced panel.
+Reference-image, reference-video, and background-audio workflows must each be selected in the Advanced panel or configured with `COMFY_IMAGE_WORKFLOW`, `COMFY_VIDEO_WORKFLOW`, and `COMFY_BACKGROUND_AUDIO_WORKFLOW` respectively.
 
 ### Exporting API workflows
 
@@ -62,7 +64,7 @@ The app lists workflows from ComfyUI's `userdata` API and recognizes T2I, image-
 4. Set the corresponding workflow environment variable to that downloaded file, or copy it into the active ComfyUI user workflow directory (commonly `ComfyUI/user/default/workflows/`) under a distinct name such as `portrait-api.json` so it does not overwrite the editable UI graph.
 5. If you copied it into ComfyUI, open **Advanced models & workflows** in Local Movie Maker, refresh, and select it.
 
-UI-format workflows are shown but disabled with an “Export API” label. This is intentional: silently guessing how to flatten arbitrary custom nodes and subgraphs can change a graph's behavior. A native video workflow is required; there is no still-image motion fallback.
+UI-format workflows are shown but disabled with an “Export API” label. This is intentional: silently guessing how to flatten arbitrary custom nodes and subgraphs can change a graph's behavior. No synthetic media is substituted for a missing workflow.
 
 Workflow files are ordinary ComfyUI API JSON with `{{TOKEN}}` placeholders. An exact placeholder retains its number type; placeholders embedded in longer strings are replaced as text.
 
@@ -95,15 +97,19 @@ Every planned shot is capped at `COMFY_VIDEO_SEGMENT_SECONDS` (15 seconds by
 default). Longer action is expressed as additional, independently generated
 shots; no continuation or prior-keyframe workflow is used. LoadImage nodes may
 alternatively be titled **Character Reference 1** or **Setting Reference** for
-automatic injection.
+automatic injection. The standard MiniMax H3 reference-to-video graph is also
+recognized from its `ref_images.ref_image_*` connections, and the linked
+`LoadImage` nodes are populated in that input order.
 
 Background-audio workflows receive `{{PROMPT}}`, `{{DURATION}}`, `{{SECONDS}}`,
 and `{{SEED}}`. The planner creates scene-sized cues, so a single generated
 ambience or music track can span several shots.
 
-Set the optional workflow paths before starting the app:
+Set configured workflow paths before starting the app, or select all three in
+the Advanced panel:
 
 ```bash
+export COMFY_IMAGE_WORKFLOW="$PWD/workflows/my-image-api.json"
 export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
 export COMFY_BACKGROUND_AUDIO_WORKFLOW="$PWD/workflows/my-background-audio-api.json"
 python3 run.py
@@ -114,8 +120,8 @@ ComfyUI installations and video/audio node packs vary substantially, which is wh
 All character and setting images are generated before any video job is queued, so
 ComfyUI can keep the image model hot and then transition to video generation only
 once. References are uploaded once and reused across every matching shot. Audio
-produced by a video workflow is preserved for dialogue and diegetic sound. Optional
-background tracks are mixed underneath it at a lower level and ducked when dialogue
+produced by a video workflow is preserved for dialogue and diegetic sound. Background
+tracks are mixed underneath it at a lower level and ducked when dialogue
 is present. No synthetic media is substituted for missing generative models.
 
 ## Pipeline
@@ -143,11 +149,11 @@ Generated state is updated atomically in `projects/<id>/project.json`. If the ap
 
 ## HTTP API
 
-- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, `video_workflow`, and `background_audio_workflow` selections.
+- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus `llama_model`, `image_workflow`, `video_workflow`, and `background_audio_workflow` selections unless their corresponding environment defaults are configured. `checkpoint` is optional.
 - `GET /api/integrations` — discovers llama.cpp models, ComfyUI checkpoints, and saved workflows.
 - `GET /api/projects/<id>` — returns status, progress, plan, assets, errors, and final URL.
 - `GET /api/projects` — returns the 20 most recent projects.
 - `GET /media/<id>/...` — serves generated project media with video byte-range support.
 
 Duration may be from 5 seconds through 90 minutes. Resolution ids are `540p`,
-`720p`, `1080p`, `vertical`, and `square`; the current UI presents the first four.
+`720p`, `1080p`, and `square`; the current UI presents the three landscape options.

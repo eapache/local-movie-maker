@@ -22,6 +22,21 @@ PROJECT_ROUTE = re.compile(r"^/api/projects/([a-f0-9]{32})$")
 MEDIA_ROUTE = re.compile(r"^/media/([a-f0-9]{32})/(.+)$")
 
 
+def missing_required_integrations(
+    request: ProjectRequest, settings: Settings
+) -> list[str]:
+    missing = []
+    if not (request.llama_model or settings.llama_model):
+        missing.append("story model")
+    if not (request.image_workflow or settings.image_workflow):
+        missing.append("reference image workflow")
+    if not (request.video_workflow or settings.video_workflow):
+        missing.append("reference video workflow")
+    if not (request.background_audio_workflow or settings.background_audio_workflow):
+        missing.append("background audio workflow")
+    return missing
+
+
 class MovieMakerApp:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings()
@@ -63,6 +78,7 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                         for key, size in RESOLUTIONS.items()
                     ],
                     "video_workflow": bool(self.app.settings.video_workflow),
+                    "image_workflow": bool(self.app.settings.image_workflow),
                     "background_audio_workflow": bool(
                         self.app.settings.background_audio_workflow
                     ),
@@ -105,7 +121,9 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
                 "checkpoints": [],
                 "error": None,
                 "workflows": {
-                    "image": settings.image_workflow.name,
+                    "image": (
+                        settings.image_workflow.name if settings.image_workflow else None
+                    ),
                     "video": settings.video_workflow.name if settings.video_workflow else None,
                     "background_audio": (
                         settings.background_audio_workflow.name
@@ -165,15 +183,14 @@ class MovieMakerHandler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("Request body must be a JSON object.")
             request = ProjectRequest.from_dict(payload)
-            if (
-                not self.app.settings.demo_mode
-                and not request.video_workflow
-                and self.app.settings.video_workflow is None
-            ):
-                raise ValueError(
-                    "Choose an executable text-and-reference ComfyUI video workflow "
-                    "under Advanced settings, or set COMFY_VIDEO_WORKFLOW."
-                )
+            if not self.app.settings.demo_mode:
+                missing = missing_required_integrations(request, self.app.settings)
+                if missing:
+                    raise ValueError(
+                        f"Choose the required {', '.join(missing)} under Advanced "
+                        "models & workflows, or configure the corresponding environment "
+                        "variables."
+                    )
         except (ValueError, json.JSONDecodeError) as exc:
             self._error(HTTPStatus.BAD_REQUEST, str(exc))
             return

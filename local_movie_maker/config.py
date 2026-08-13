@@ -33,8 +33,8 @@ class Settings:
     comfy_server_command: str | None = os.getenv("COMFY_SERVER_COMMAND")
     comfy_startup_timeout: int = int(os.getenv("COMFY_STARTUP_TIMEOUT", "180"))
     comfy_timeout: int = int(os.getenv("COMFY_TIMEOUT", "900"))
-    image_workflow: Path = Path(
-        os.getenv("COMFY_IMAGE_WORKFLOW", ROOT / "workflows" / "image.json")
+    image_workflow: Path | None = (
+        Path(value) if (value := os.getenv("COMFY_IMAGE_WORKFLOW")) else None
     )
     video_workflow: Path | None = (
         Path(value) if (value := os.getenv("COMFY_VIDEO_WORKFLOW")) else None
@@ -61,6 +61,5 @@ RESOLUTIONS: dict[str, tuple[int, int]] = {
     "540p": (960, 540),
     "720p": (1280, 720),
     "1080p": (1920, 1080),
-    "vertical": (1080, 1920),
     "square": (1080, 1080),
 }

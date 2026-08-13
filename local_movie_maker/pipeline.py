@@ -8,7 +8,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from .clients import ApiError, ComfyClient, LlamaClient, describe_workflow, replace_workflow_tokens
+from .clients import (
+    ApiError,
+    ComfyClient,
+    LlamaClient,
+    describe_workflow,
+    reference_image_node_ids,
+    replace_workflow_tokens,
+)
 from .config import RESOLUTIONS, Settings
 from .media import MediaTools
 from .models import Project, ProjectRequest
@@ -32,8 +39,10 @@ class MoviePipeline:
         comfy_service: ManagedService | None = None
         effective_model = "demo"
         effective_checkpoint = "demo"
-        image_workflow: Path | dict[str, Any] = self.settings.image_workflow
-        image_workflow_name = self.settings.image_workflow.name
+        image_workflow: Path | dict[str, Any] | None = self.settings.image_workflow
+        image_workflow_name = (
+            self.settings.image_workflow.name if self.settings.image_workflow else None
+        )
         video_workflow: Path | dict[str, Any] | None = self.settings.video_workflow
         video_workflow_name = self.settings.video_workflow.name if self.settings.video_workflow else None
         background_audio_workflow: Path | dict[str, Any] | None = (
@@ -125,6 +134,11 @@ class MoviePipeline:
                             "executable ComfyUI image API graph."
                         )
                     image_workflow = configured_image
+                if image_workflow is None:
+                    raise ApiError(
+                        "No reference image workflow is configured. Select an executable "
+                        "ComfyUI image API graph or set COMFY_IMAGE_WORKFLOW."
+                    )
 
                 checkpoint = project.request.checkpoint or self.settings.checkpoint
                 # Exported API workflows normally contain their own model loaders.
@@ -154,6 +168,11 @@ class MoviePipeline:
                         background_audio_workflow,
                     )
                 )
+                if background_audio_workflow is None:
+                    raise ApiError(
+                        "No background audio workflow is configured. Select an executable "
+                        "ComfyUI audio API graph or set COMFY_BACKGROUND_AUDIO_WORKFLOW."
+                    )
                 if any(
                     shot["duration"] > self.settings.video_segment_seconds
                     for shot in plan["shots"]
@@ -238,7 +257,7 @@ class MoviePipeline:
         comfy: ComfyClient | None,
         media: MediaTools,
         checkpoint: str,
-        image_workflow: Path | dict[str, Any],
+        image_workflow: Path | dict[str, Any] | None,
     ) -> tuple[list[dict[str, Any]], dict[tuple[str, str], Path]]:
         image_dir = workdir / "references"
         image_dir.mkdir(exist_ok=True)
@@ -263,6 +282,8 @@ class MoviePipeline:
             if comfy is None:
                 media.placeholder(destination, 1024, 576, seed)
             else:
+                if image_workflow is None:
+                    raise ApiError("A ComfyUI reference image workflow is required.")
                 values = image_values(
                     prompt, seed, project.request.resolution, checkpoint
                 )
@@ -643,6 +664,10 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
     negative_nodes: set[str] = set()
     reference_cursor = 1
     character_cursor = 1
+    linked_reference_nodes = {
+        node_id: index
+        for index, node_id in enumerate(reference_image_node_ids(result), start=1)
+    }
     for node in result.values():
         if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
             continue
@@ -690,6 +715,10 @@ def inject_api_workflow(workflow: dict[str, Any], values: dict[str, Any]) -> dic
                     if token in values:
                         inputs[key] = values[token]
                     reference_cursor += 1
+                elif str(node_id) in linked_reference_nodes:
+                    token = f"REFERENCE_IMAGE_{linked_reference_nodes[str(node_id)]}"
+                    if token in values:
+                        inputs[key] = values[token]
             elif lowered in {"prompt", "positive_prompt"}:
                 inputs[key] = prompt
             elif lowered in {"text", "value"} and not negative and (

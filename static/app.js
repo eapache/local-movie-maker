@@ -210,10 +210,7 @@ function renderResult(project) {
   setText('#result-title', project.plan?.title || 'Your film');
   setText('#result-logline', project.plan?.logline || '');
   const video = $('#final-video');
-  const aspectRatios = {
-    vertical: '9 / 16',
-    square: '1 / 1',
-  };
+  const aspectRatios = {square: '1 / 1'};
   video.closest('.screen').style.aspectRatio = aspectRatios[project.request?.resolution] || '16 / 9';
   if (video.src !== new URL(project.video_url, location.href).href) {
     video.src = project.video_url;
@@ -282,11 +279,20 @@ async function loadIntegrations() {
         disabled: !workflow.executable,
       }))
       .sort((left, right) => Number(left.disabled) - Number(right.disabled));
-    fillSelect($('#image-workflow'), imageWorkflows, null);
+    const configuredImage = integrations.comfy.workflows.image;
+    if (configuredImage) {
+      $('#image-workflow').options[0].textContent = `Configured: ${configuredImage}`;
+    } else {
+      $('#image-workflow').options[0].textContent = 'Select an image workflow';
+    }
+    fillSelect($('#image-workflow'), imageWorkflows, null, Boolean(configuredImage));
 
     const videoWorkflows = [];
-    if (integrations.comfy.workflows.video) {
-      videoWorkflows.push({value: '', label: `Configured: ${integrations.comfy.workflows.video}`});
+    const configuredVideo = integrations.comfy.workflows.video;
+    if (configuredVideo) {
+      $('#video-workflow').options[0].textContent = `Configured: ${configuredVideo}`;
+    } else {
+      $('#video-workflow').options[0].textContent = 'Select a video workflow';
     }
     integrations.comfy.saved_workflows
       .filter((workflow) => workflow.capabilities?.video
@@ -302,15 +308,15 @@ async function loadIntegrations() {
       $('#video-workflow'),
       videoWorkflows,
       null,
-      !integrations.comfy.workflows.video,
+      Boolean(configuredVideo),
     );
 
     const backgroundAudioWorkflows = [];
-    if (integrations.comfy.workflows.background_audio) {
-      backgroundAudioWorkflows.push({
-        value: '',
-        label: `Configured: ${integrations.comfy.workflows.background_audio}`,
-      });
+    const configuredAudio = integrations.comfy.workflows.background_audio;
+    if (configuredAudio) {
+      $('#background-audio-workflow').options[0].textContent = `Configured: ${configuredAudio}`;
+    } else {
+      $('#background-audio-workflow').options[0].textContent = 'Select an audio workflow';
     }
     integrations.comfy.saved_workflows
       .filter((workflow) => workflow.kind === 'audio')
@@ -320,24 +326,29 @@ async function loadIntegrations() {
         disabled: !workflow.executable,
       }));
     backgroundAudioWorkflows.sort((left, right) => Number(left.disabled) - Number(right.disabled));
-    fillSelect($('#background-audio-workflow'), backgroundAudioWorkflows, null);
+    fillSelect(
+      $('#background-audio-workflow'),
+      backgroundAudioWorkflows,
+      null,
+      Boolean(configuredAudio),
+    );
 
     const llamaOK = integrations.llama.models.length > 0;
     const executableImages = imageWorkflows.filter((item) => !item.disabled);
     const imageOK = Boolean(integrations.comfy.workflows.image) || executableImages.length > 0;
-    const videoOK = Boolean(integrations.comfy.workflows.video) || videoWorkflows.some((item) => item.value && !item.disabled);
-    const audioOK = Boolean(integrations.comfy.workflows.background_audio)
+    const videoOK = Boolean(configuredVideo) || videoWorkflows.some((item) => item.value && !item.disabled);
+    const audioOK = Boolean(configuredAudio)
       || backgroundAudioWorkflows.some((item) => item.value && !item.disabled);
-    summary.textContent = `${llamaOK ? integrations.llama.models.length : 0} LLMs · ${executableImages.length} image workflows · ${videoOK ? 'reference video ready' : 'reference video workflow needed'} · ${audioOK ? 'background audio ready' : 'no background audio'}`;
+    summary.textContent = `${llamaOK ? integrations.llama.models.length : 0} LLMs · ${executableImages.length} image workflows · ${videoOK ? 'reference video ready' : 'reference video workflow needed'} · ${audioOK ? 'background audio ready' : 'background audio workflow needed'}`;
     $('#image-workflow-help').textContent = executableImages.length
-      ? 'Executable T2I workflows are preferred; the configured image workflow remains available as a fallback.'
+      ? 'Select an executable T2I workflow for character and setting references.'
       : imageWorkflows.length
         ? `${imageWorkflows.length} saved image workflow(s) still need an API export.`
-        : `No saved T2I API workflows found; using configured ${integrations.comfy.workflows.image}.`;
+        : 'No executable T2I workflow was found.';
     $('#workflow-help').textContent = videoOK
       ? 'Begins each shot from its text plus the matching character and setting references.'
       : 'No executable text + reference video workflow was found.';
-    if (!llamaOK || !imageOK || !videoOK) $('#advanced').open = true;
+    if (!llamaOK || !imageOK || !videoOK || !audioOK) $('#advanced').open = true;
   } catch (error) {
     summary.textContent = 'Local service discovery failed';
     $('#workflow-help').textContent = error.name === 'AbortError'

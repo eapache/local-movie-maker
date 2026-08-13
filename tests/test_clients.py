@@ -114,3 +114,35 @@ def test_saved_workflow_classification_detects_reference_video_roles():
     }
     assert continued["kind"] == "ref-i2v"
     assert continued["capabilities"]["keyframe"] is True
+
+
+def test_saved_workflow_classification_follows_minimax_reference_inputs():
+    workflow = {
+        "generator": {
+            "class_type": "MiniMaxH3ReferenceToVideo",
+            "inputs": {
+                "ref_images.ref_image_0": ["first", 0],
+                "ref_images.ref_image_1": ["second", 0],
+            },
+        },
+        "first": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "first.png"},
+            "_meta": {"title": "Load Image"},
+        },
+        "second": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "second.png"},
+            "_meta": {"title": "Load Image"},
+        },
+        "output": {"class_type": "SaveVideo", "inputs": {}},
+    }
+
+    description = describe_workflow("api_minimax_h3_r2v.json", workflow)
+
+    assert description["kind"] == "ref2v"
+    assert description["capabilities"] == {
+        "video": True,
+        "references": True,
+        "keyframe": False,
+    }

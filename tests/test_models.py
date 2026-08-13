@@ -1,5 +1,6 @@
 import pytest
 
+from local_movie_maker.config import RESOLUTIONS, Settings
 from local_movie_maker.models import ProjectRequest
 from local_movie_maker.planning import StoryPlanner, normalize_plan
 
@@ -25,6 +26,20 @@ def test_project_request_validation():
     with pytest.raises(ValueError, match="90 minutes"):
         ProjectRequest.from_dict(
             {"prompt": "valid prompt", "duration": 5_401, "resolution": "720p"}
+        )
+
+
+def test_image_workflow_has_no_bundled_fallback(monkeypatch):
+    monkeypatch.delenv("COMFY_IMAGE_WORKFLOW", raising=False)
+
+    assert Settings().image_workflow is None
+
+
+def test_portrait_resolution_is_not_available():
+    assert "vertical" not in RESOLUTIONS
+    with pytest.raises(ValueError, match="Resolution"):
+        ProjectRequest.from_dict(
+            {"prompt": "A portrait story", "duration": 30, "resolution": "vertical"}
         )
 
 

@@ -94,6 +94,40 @@ def test_reference_inputs_are_injected_by_role():
     assert values["REFERENCE_IMAGES"] == ["frog.png", "mars.png"]
 
 
+def test_minimax_linked_reference_inputs_are_injected_in_input_order():
+    workflow = {
+        "generator": {
+            "class_type": "MiniMaxH3ReferenceToVideo",
+            "inputs": {
+                "ref_images.ref_image_0": ["first", 0],
+                "ref_images.ref_image_1": ["second", 0],
+            },
+        },
+        "first": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "old-first.png"},
+            "_meta": {"title": "Load Image"},
+        },
+        "second": {
+            "class_type": "LoadImage",
+            "inputs": {"image": "old-second.png"},
+            "_meta": {"title": "Load Image"},
+        },
+    }
+    references = {
+        "all": ["frog.png", "mars.png"],
+        "characters": ["frog.png"],
+        "setting": "mars.png",
+    }
+
+    result = inject_api_workflow(
+        workflow, video_values("Frog runs", 42, "720p", 6, references)
+    )
+
+    assert result["first"]["inputs"]["image"] == "frog.png"
+    assert result["second"]["inputs"]["image"] == "mars.png"
+
+
 def test_shot_references_are_deterministic():
     uploaded = {
         ("character", "Pip"): "pip.png",

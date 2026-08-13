@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -401,6 +402,36 @@ def replace_workflow_tokens(workflow: dict[str, Any], values: dict[str, Any]) ->
     return result
 
 
+def reference_image_node_ids(workflow: dict[str, Any]) -> list[str]:
+    """Return LoadImage node ids wired to explicit reference-image inputs."""
+    candidates: list[tuple[int, int, str]] = []
+    sequence = 0
+    for node in workflow.values():
+        if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+            continue
+        for name, link in node["inputs"].items():
+            normalized = str(name).lower().replace("-", "_")
+            if "ref_image" not in normalized and "reference_image" not in normalized:
+                continue
+            if not isinstance(link, list) or not link:
+                continue
+            source_id = str(link[0])
+            source = workflow.get(source_id)
+            if (
+                isinstance(source, dict)
+                and str(source.get("class_type", "")).lower() == "loadimage"
+            ):
+                suffix = re.search(r"(\d+)$", normalized)
+                order = int(suffix.group(1)) if suffix else sequence
+                candidates.append((order, sequence, source_id))
+                sequence += 1
+    result: list[str] = []
+    for _order, _sequence, source_id in sorted(candidates):
+        if source_id not in result:
+            result.append(source_id)
+    return result
+
+
 def describe_workflow(name: str, workflow: dict[str, Any]) -> dict[str, Any]:
     if isinstance(workflow.get("nodes"), list):
         workflow_format = "ui"
@@ -438,25 +469,45 @@ def describe_workflow(name: str, workflow: dict[str, Any]) -> dict[str, Any]:
     has_video = any("video" in item.lower() for item in types)
     has_audio = any("audio" in item.lower() for item in types)
     serialized = json.dumps(workflow).upper()
-    load_image_titles = [
-        str(node.get("title") or node.get("_meta", {}).get("title", "")).lower()
-        for node in nodes
-        if str(node.get("type") or node.get("class_type", "")).lower() == "loadimage"
+    load_images = [
+        (str(node_id), node)
+        for node_id, node in (
+            workflow.items() if workflow_format == "api" else enumerate(nodes)
+        )
+        if isinstance(node, dict)
+        and str(node.get("type") or node.get("class_type", "")).lower() == "loadimage"
     ]
-    has_image_input = bool(load_image_titles)
+    reference_node_ids = (
+        set(reference_image_node_ids(workflow)) if workflow_format == "api" else set()
+    )
+    load_image_titles = {
+        node_id: str(node.get("title") or node.get("_meta", {}).get("title", "")).lower()
+        for node_id, node in load_images
+    }
+    token_reference_node_ids = {
+        node_id
+        for node_id, node in load_images
+        if any(
+            token in json.dumps(node).upper()
+            for token in ("REFERENCE_IMAGE", "CHARACTER_REFERENCE", "SETTING_REFERENCE")
+        )
+    }
+    titled_reference_node_ids = {
+        node_id
+        for node_id, title in load_image_titles.items()
+        if any(word in title for word in ("reference", "character", "setting"))
+    }
+    reference_node_ids |= token_reference_node_ids | titled_reference_node_ids
     has_references = any(
         token in serialized
         for token in ("REFERENCE_IMAGE", "CHARACTER_REFERENCE", "SETTING_REFERENCE")
-    ) or any(
-        any(word in title for word in ("reference", "character", "setting"))
-        for title in load_image_titles
-    )
+    ) or bool(reference_node_ids)
     has_keyframe = "KEYFRAME_IMAGE" in serialized or any(
         any(word in title for word in ("keyframe", "first frame", "start frame"))
-        for title in load_image_titles
+        for title in load_image_titles.values()
     )
-    # A legacy graph with one untitled LoadImage is assumed to be ordinary I2V.
-    if has_image_input and not has_references:
+    # Any LoadImage not identified as a reference is a starting-frame input.
+    if any(node_id not in reference_node_ids for node_id, _node in load_images):
         has_keyframe = True
     has_image_output = any(item in types for item in ("SaveImage", "PreviewImage"))
     if has_video:

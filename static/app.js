@@ -10,6 +10,8 @@ const submitButton = form.querySelector('button[type="submit"]');
 let pollTimer = null;
 let currentProject = null;
 
+const durationChoices = Array.from({length: 24}, (_, index) => (index + 1) * 5);
+
 const stages = [
   ['planning', 'Writing'],
   ['handoff', 'GPU handoff'],
@@ -34,8 +36,18 @@ function showError(message) {
 }
 
 function updateDuration() {
-  const seconds = Number(duration.value);
-  $('#duration-output').value = seconds < 60 ? `${seconds} sec` : `${seconds / 60} min`;
+  $('#duration-output').value = formatDuration(selectedDuration());
+}
+
+function selectedDuration() {
+  return durationChoices[Number(duration.value)];
+}
+
+function formatDuration(seconds) {
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes} min ${remainder} sec` : `${minutes} min`;
 }
 
 duration.addEventListener('input', updateDuration);
@@ -62,7 +74,7 @@ form.addEventListener('submit', async (event) => {
   submitButton.disabled = true;
   const body = {
     prompt: prompt.value.trim(),
-    duration: Number(duration.value),
+    duration: selectedDuration(),
     resolution: new FormData(form).get('resolution'),
     llama_model: $('#llama-model').value || null,
     image_workflow: $('#image-workflow').value || null,
@@ -203,6 +215,8 @@ function renderResult(project) {
 }
 
 async function init() {
+  duration.max = String(durationChoices.length - 1);
+  duration.value = String(durationChoices.indexOf(30));
   updateDuration();
 
   // Discovery should not depend on the unrelated config request succeeding.

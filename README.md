@@ -86,12 +86,11 @@ and setting references. It receives:
 | `{{FPS}}` | `24` |
 | `{{WIDTH}}`, `{{HEIGHT}}` | Final output dimensions |
 
-The optional continuation workflow receives all of the same values plus
-`{{KEYFRAME_IMAGE}}` (also available as the legacy `{{IMAGE}}` alias). It is used
-only when a planned shot is longer than `COMFY_VIDEO_SEGMENT_SECONDS`; the
-keyframe is extracted from the prior segment's final frame rather than generated
-independently. LoadImage nodes may alternatively be titled **Character Reference
-1**, **Setting Reference**, or **Continuation Keyframe** for automatic injection.
+Every planned shot is capped at `COMFY_VIDEO_SEGMENT_SECONDS` (15 seconds by
+default). Longer action is expressed as additional, independently generated
+shots; no continuation or prior-keyframe workflow is used. LoadImage nodes may
+alternatively be titled **Character Reference 1** or **Setting Reference** for
+automatic injection.
 
 Audio workflows receive `{{PROMPT}}`, `{{DURATION}}`, `{{SECONDS}}`, and `{{SEED}}`.
 
@@ -99,12 +98,11 @@ Set the optional workflow paths before starting the app:
 
 ```bash
 export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
-export COMFY_CONTINUATION_WORKFLOW="$PWD/workflows/my-continuation-api.json"
 export COMFY_AUDIO_WORKFLOW="$PWD/workflows/my-audio-api.json"
 python3 run.py
 ```
 
-ComfyUI installations and video/audio node packs vary substantially, which is why those workflows are user-supplied. Pure T2V and ordinary keyframe-only I2V graphs are discovered but are not offered as primary movie workflows: the primary graph must accept references, and the continuation graph must accept references plus a keyframe. For ordinary saved API exports, the app injects common prompt, reference, duration/frame-count, size, FPS, and seed fields. Explicit `{{TOKEN}}` placeholders remain available when a graph uses unusual names.
+ComfyUI installations and video/audio node packs vary substantially, which is why those workflows are user-supplied. Pure T2V and keyframe-based I2V graphs are discovered but are not offered as movie workflows: the graph must accept references without requiring a starting frame. For ordinary saved API exports, the app injects common prompt, reference, duration/frame-count, size, FPS, and seed fields. Explicit `{{TOKEN}}` placeholders remain available when a graph uses unusual names.
 
 All character and setting images are generated before any video job is queued, so
 ComfyUI can keep the image model hot and then transition to video generation only
@@ -124,9 +122,7 @@ prompt + duration + resolution
   all character + setting reference images            ComfyUI image phase
              │
              ▼
-  text + relevant refs → video clips                   ComfyUI video phase
-             │                │ long shot only
-             │                └─ last frame → continuation
+  text + relevant refs → capped video clips            ComfyUI video phase
              └──────── score ───────────────────────── ComfyUI or fallback
                               │
                               ▼
@@ -137,7 +133,7 @@ Generated state is updated atomically in `projects/<id>/project.json`. If the ap
 
 ## HTTP API
 
-- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, `video_workflow`, and `continuation_workflow` selections.
+- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus optional `llama_model`, `image_workflow`, `checkpoint`, and `video_workflow` selections.
 - `GET /api/integrations` — discovers llama.cpp models, ComfyUI checkpoints, and saved workflows.
 - `GET /api/projects/<id>` — returns status, progress, plan, assets, errors, and final URL.
 - `GET /api/projects` — returns the 20 most recent projects.

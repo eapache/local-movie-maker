@@ -67,7 +67,6 @@ form.addEventListener('submit', async (event) => {
     llama_model: $('#llama-model').value || null,
     image_workflow: $('#image-workflow').value || null,
     video_workflow: $('#video-workflow').value || null,
-    continuation_workflow: $('#continuation-workflow').value || null,
   };
   try {
     const response = await fetch('/api/projects', {
@@ -282,25 +281,6 @@ async function loadIntegrations() {
       !integrations.comfy.workflows.video,
     );
 
-    const continuationWorkflows = [];
-    if (integrations.comfy.workflows.continuation) {
-      continuationWorkflows.push({
-        value: '',
-        label: `Configured: ${integrations.comfy.workflows.continuation}`,
-      });
-    }
-    integrations.comfy.saved_workflows
-      .filter((workflow) => workflow.capabilities?.video
-        && workflow.capabilities.references
-        && workflow.capabilities.keyframe)
-      .forEach((workflow) => continuationWorkflows.push({
-        value: workflow.id,
-        label: `${workflow.name} · REF+I2V${workflow.executable ? '' : ' · UI format (Export API)'}`,
-        disabled: !workflow.executable,
-      }));
-    continuationWorkflows.sort((left, right) => Number(left.disabled) - Number(right.disabled));
-    fillSelect($('#continuation-workflow'), continuationWorkflows, null);
-
     const llamaOK = integrations.llama.models.length > 0;
     const executableImages = imageWorkflows.filter((item) => !item.disabled);
     const imageOK = Boolean(integrations.comfy.workflows.image) || executableImages.length > 0;
@@ -314,9 +294,6 @@ async function loadIntegrations() {
     $('#workflow-help').textContent = videoOK
       ? 'Begins each shot from its text plus the matching character and setting references.'
       : 'Export an API graph with REFERENCE_IMAGES inputs or LoadImage nodes titled as references.';
-    $('#continuation-workflow-help').textContent = continuationWorkflows.length
-      ? 'Used only when a long shot is split; receives the prior segment’s last frame plus the same references.'
-      : 'Optional unless a shot exceeds the configured segment length. Requires references plus KEYFRAME_IMAGE.';
     if (!llamaOK || !imageOK || !videoOK) $('#advanced').open = true;
   } catch (error) {
     summary.textContent = 'Local service discovery failed';

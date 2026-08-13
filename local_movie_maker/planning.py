@@ -18,14 +18,20 @@ continuity, and return only the JSON object requested. Do not use Markdown."""
 
 
 class StoryPlanner:
-    def __init__(self, client: LlamaClient | None, demo: bool = False):
+    def __init__(
+        self,
+        client: LlamaClient | None,
+        demo: bool = False,
+        max_shot_seconds: int = 15,
+    ):
         self.client = client
         self.demo = demo
+        self.max_shot_seconds = max(1, max_shot_seconds)
 
     def create(self, request: ProjectRequest, progress: Progress) -> dict[str, Any]:
         if self.demo:
             progress(15, "Drafting the concept")
-            return demo_plan(request)
+            return demo_plan(request, self.max_shot_seconds)
         if self.client is None:
             raise RuntimeError("A llama.cpp client is required outside demo mode.")
 
@@ -65,9 +71,12 @@ Return this shape:
 "action":"visible action during this shot","camera":"framing and camera movement","dialogue":"spoken line or empty string",
 "sound":"diegetic sound","transition":"cut, dissolve, etc."}}],
 "music_prompt":"instrumentation, tempo, mood and progression","credits":"short credit line"}}
-Use 3-12 shots. Their durations must total exactly {request.duration} seconds. Keep every shot visually achievable.""",
+Their durations must total exactly {request.duration} seconds. No shot may exceed
+{self.max_shot_seconds} seconds; add cuts instead of continuing a shot. Keep every shot visually achievable.""",
         )
-        return normalize_plan(request, concept, bible, script)
+        return normalize_plan(
+            request, concept, bible, script, max_shot_seconds=self.max_shot_seconds
+        )
 
 
 def normalize_plan(
@@ -75,10 +84,15 @@ def normalize_plan(
     concept: dict[str, Any],
     bible: dict[str, Any],
     script: dict[str, Any],
+    max_shot_seconds: int = 15,
 ) -> dict[str, Any]:
     characters = _object_list(bible.get("characters"), ["name", "description"], limit=3)
     settings = _object_list(bible.get("settings"), ["name", "description"], limit=3)
-    raw_shots = _object_list(script.get("shots"), ["action"], limit=12)
+    raw_shots = _object_list(
+        script.get("shots"),
+        ["action"],
+        limit=max(12, math.ceil(request.duration / max(1, max_shot_seconds)) * 2),
+    )
     if not raw_shots:
         raw_shots = [
             {
@@ -93,7 +107,9 @@ def normalize_plan(
                 "transition": "cut",
             }
         ]
-    durations = _fit_durations(raw_shots, request.duration)
+    raw_shots, durations = _fit_and_cap_shots(
+        raw_shots, request.duration, max(1, max_shot_seconds)
+    )
     shots: list[dict[str, Any]] = []
     for index, (shot, duration) in enumerate(zip(raw_shots, durations, strict=True), 1):
         cast = shot.get("characters", [])
@@ -177,7 +193,25 @@ def _fit_durations(shots: list[dict[str, Any]], target: int) -> list[int]:
     return [extra + 1 for extra in extras]
 
 
-def demo_plan(request: ProjectRequest) -> dict[str, Any]:
+def _fit_and_cap_shots(
+    shots: list[dict[str, Any]], target: int, maximum: int
+) -> tuple[list[dict[str, Any]], list[int]]:
+    durations = _fit_durations(shots, target)
+    capped_shots: list[dict[str, Any]] = []
+    capped_durations: list[int] = []
+    for shot, duration in zip(shots, durations, strict=True):
+        part_count = max(1, math.ceil(duration / maximum))
+        base, extra = divmod(duration, part_count)
+        for part_index in range(part_count):
+            item = dict(shot)
+            if part_count > 1:
+                item["title"] = f"{_text(shot.get('title'), 'Shot')} — part {part_index + 1}"
+            capped_shots.append(item)
+            capped_durations.append(base + (1 if part_index < extra else 0))
+    return capped_shots, capped_durations
+
+
+def demo_plan(request: ProjectRequest, max_shot_seconds: int = 15) -> dict[str, Any]:
     words = re.findall(r"[A-Za-z0-9']+", request.prompt)
     name = " ".join(words[:5]).title() or "A Small Wonder"
     concept = {
@@ -239,4 +273,6 @@ def demo_plan(request: ProjectRequest) -> dict[str, Any]:
         "music_prompt": "Gentle felt piano and airy strings, 72 BPM, growing wonder, soft resolved ending",
         "credits": "Created locally with Local Movie Maker",
     }
-    return normalize_plan(request, concept, bible, script)
+    return normalize_plan(
+        request, concept, bible, script, max_shot_seconds=max_shot_seconds
+    )

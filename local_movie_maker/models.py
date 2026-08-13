@@ -20,7 +20,6 @@ class ProjectRequest:
     checkpoint: str | None = None
     image_workflow: str | None = None
     video_workflow: str | None = None
-    continuation_workflow: str | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ProjectRequest":
@@ -42,9 +41,6 @@ class ProjectRequest:
             value.get("image_workflow"), "ComfyUI image workflow"
         )
         video_workflow = _optional_name(value.get("video_workflow"), "ComfyUI video workflow")
-        continuation_workflow = _optional_name(
-            value.get("continuation_workflow"), "ComfyUI continuation workflow"
-        )
         return cls(
             prompt=prompt,
             duration=duration,
@@ -53,7 +49,6 @@ class ProjectRequest:
             checkpoint=checkpoint,
             image_workflow=image_workflow,
             video_workflow=video_workflow,
-            continuation_workflow=continuation_workflow,
         )
 
 
@@ -92,5 +87,9 @@ class Project:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "Project":
         data = dict(value)
-        data["request"] = ProjectRequest(**data["request"])
+        request = dict(data["request"])
+        # Older projects may contain this retired field. Keep them readable
+        # without carrying the continuation workflow forward.
+        request.pop("continuation_workflow", None)
+        data["request"] = ProjectRequest(**request)
         return cls(**data)

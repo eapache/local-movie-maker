@@ -39,7 +39,6 @@ class StoryPlanner:
 Return this shape:
 {{"title":"...","logline":"...","overview":"...","genre":"...","tone":"...",
 "visual_style":"specific production-ready visual direction","ending":"..."}}""",
-            max_tokens=1_500,
         )
 
         progress(15, "Designing characters and locations")
@@ -52,7 +51,6 @@ Return this shape:
 {{"characters":[{{"name":"...","role":"...","description":"age, face, hair, wardrobe, silhouette and colors","voice":"..."}}],
 "settings":[{{"name":"...","description":"architecture, light, palette, weather and recurring objects"}}]}}
 Use at most 3 characters and 3 settings. Descriptions must let an image model reproduce them.""",
-            max_tokens=2_000,
         )
 
         progress(23, "Writing the shot-by-shot script")
@@ -68,7 +66,6 @@ Return this shape:
 "sound":"diegetic sound","transition":"cut, dissolve, etc."}}],
 "music_prompt":"instrumentation, tempo, mood and progression","credits":"short credit line"}}
 Use 3-12 shots. Their durations must total exactly {request.duration} seconds. Keep every shot visually achievable.""",
-            max_tokens=4_500,
         )
         return normalize_plan(request, concept, bible, script)
 

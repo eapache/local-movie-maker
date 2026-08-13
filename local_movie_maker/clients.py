@@ -101,7 +101,7 @@ class LlamaClient:
         self.model = models[0]
         return self.model
 
-    def complete_json(self, system: str, prompt: str, *, max_tokens: int = 4_096) -> dict[str, Any]:
+    def complete_json(self, system: str, prompt: str, *, max_tokens: int = -1) -> dict[str, Any]:
         model = self.resolve_model()
         response = request_json(
             f"{self.base_url}/v1/chat/completions",
@@ -119,10 +119,19 @@ class LlamaClient:
             timeout=300,
         )
         try:
-            content = response["choices"][0]["message"]["content"]  # type: ignore[index]
+            choice = response["choices"][0]  # type: ignore[index]
+            message = choice["message"]
+            content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ApiError("llama.cpp returned an unexpected chat-completions response.") from exc
-        return parse_json_object(str(content))
+        if not isinstance(content, str) or not content.strip():
+            if choice.get("finish_reason") == "length" and message.get("reasoning_content"):
+                raise ApiError(
+                    "llama.cpp reached its generation or context limit while reasoning "
+                    "and returned no JSON."
+                )
+            raise ApiError("llama.cpp returned an empty chat-completions message.")
+        return parse_json_object(content)
 
     def unload(self, unload_url: str | None = None) -> None:
         if unload_url:

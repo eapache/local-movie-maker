@@ -87,9 +87,12 @@ prompt → story, continuity, scenes, and shots             llama.cpp
        → mixed and assembled final.mp4                     FFmpeg
 ```
 
-The video workflow's own audio is kept for dialogue and diegetic sound.
-Background tracks are mixed underneath it and ducked during dialogue. Completed
-work remains in `projects/<id>/` if a run is interrupted.
+The video workflow's own audio is kept for dialogue and diegetic sound and
+normalized to -16 LUFS. Background tracks are normalized to -24 LUFS, mixed
+underneath it, ducked from a voice-band sidechain during dialogue, and
+peak-limited after mixing. Video prompts explicitly reserve music and score for
+this background-audio pass. Completed work remains in `projects/<id>/` if a run
+is interrupted.
 
 <details>
 <summary><strong>Use non-default service addresses</strong></summary>

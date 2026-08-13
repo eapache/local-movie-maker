@@ -190,8 +190,10 @@ uploaded once and reused for every matching shot.
 Each planned shot is capped at `COMFY_VIDEO_SEGMENT_SECONDS`. Longer action is
 expressed as additional independently generated shots; prior-keyframe or
 continuation workflows are not used. Audio produced by the video workflow is
-preserved for dialogue and diegetic sound. Background tracks are mixed below it
-and ducked during dialogue.
+preserved and normalized to -16 LUFS for dialogue and diegetic sound, while its
+prompt explicitly forbids music and score. Generated background tracks are
+normalized to -24 LUFS, mixed below the native audio, ducked from a voice-band
+sidechain during dialogue, and peak-limited after mixing.
 
 Generated state is updated atomically in `projects/<id>/project.json`. If the app
 is interrupted, finished work remains available and an in-flight project is

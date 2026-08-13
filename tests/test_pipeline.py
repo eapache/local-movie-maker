@@ -8,6 +8,7 @@ from local_movie_maker.pipeline import (
     inject_api_workflow,
     planned_audio_cues,
     references_for_shot,
+    shot_prompt,
     video_values,
     workflow_uses_token,
 )
@@ -169,3 +170,50 @@ def test_audio_workflow_injection_does_not_require_image_dimensions():
         "seconds": 12,
         "seed": 42,
     }
+
+
+def test_shot_prompt_reserves_music_for_background_audio_pass():
+    prompt = shot_prompt(
+        {
+            "action": "Mara closes the hatch",
+            "camera": "Tight close-up",
+            "dialogue": "We're safe now.",
+            "sound": "A metal latch clicks and the engine idles",
+            "characters": [],
+            "setting": "Cabin",
+            "prompt": "Mara closes the hatch in a tense cinematic beat",
+        },
+        {
+            "characters": [],
+            "settings": [{"name": "Cabin", "description": "A dim ship cabin"}],
+            "visual_style": "Naturalistic science fiction",
+            "tone": "Relieved",
+        },
+    )
+
+    assert 'spoken dialogue exactly: "We\'re safe now."' in prompt
+    assert "metal latch clicks" in prompt
+    assert "Do not generate music, score, a soundtrack" in prompt
+    assert "added separately in post-production" in prompt
+
+
+def test_silent_shot_prompt_forbids_model_dialogue():
+    prompt = shot_prompt(
+        {
+            "action": "Rain crosses an empty street",
+            "camera": "Locked wide shot",
+            "dialogue": "",
+            "sound": "Rain and distant traffic",
+            "characters": [],
+            "setting": "Street",
+        },
+        {
+            "characters": [],
+            "settings": [],
+            "visual_style": "35mm film",
+            "tone": "Quiet",
+        },
+    )
+
+    assert "no spoken words" in prompt
+    assert "Diegetic sound only" in prompt

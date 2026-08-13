@@ -644,10 +644,21 @@ def shot_prompt(shot: dict[str, Any], plan: dict[str, Any]) -> str:
     direction = shot.get("prompt") or (
         f"{shot['action']} Camera: {shot['camera']}."
     )
+    dialogue = str(shot.get("dialogue", "")).strip()
+    sound = str(shot.get("sound", "Natural ambience")).strip()
+    if dialogue:
+        audio_direction = (
+            f'Audio direction: perform only this spoken dialogue exactly: "{dialogue}". '
+            f"Diegetic sound: {sound}."
+        )
+    else:
+        audio_direction = f"Audio direction: no spoken words. Diegetic sound only: {sound}."
     return (
         f"Film shot. {direction} "
         f"Setting: {setting}. Characters: {cast or 'none'}. "
         f"Visual language: {plan['visual_style']}. Tone: {plan['tone']}. "
+        f"{audio_direction} Do not generate music, score, a soundtrack, singing, or vocals. "
+        "Background music is added separately in post-production. "
         "Cohesive character design, cinematic lighting, no text, no subtitles."
     )
 

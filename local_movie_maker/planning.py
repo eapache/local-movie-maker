@@ -75,7 +75,7 @@ Continuity bible: {json.dumps(bible, ensure_ascii=False)}
 Return this shape:
 {{"shots":[{{"title":"...","duration":4,"setting":"exact setting name","characters":["exact character name"],
 "action":"visible action during this shot","camera":"framing and camera movement","dialogue":"spoken line or empty string",
-"prompt":"standalone production-ready prompt for the video model",
+"prompt":"standalone production-ready visual and performance prompt for the video model; no music or score",
 "sound":"diegetic sound","transition":"cut, dissolve, etc."}}],
 "background_audio_prompt":"ambience, music, instrumentation, tempo, mood and progression","credits":"short credit line"}}
 Their durations must total exactly {request.duration} seconds. No shot may exceed
@@ -206,7 +206,7 @@ Return at least {minimum_shots} shots:
 {{"shots":[{{"title":"...","duration":10,"setting":"exact setting name",
 "characters":["exact character name"],"action":"visible action","camera":"framing and movement",
 "dialogue":"line performed in this shot or empty","sound":"diegetic sound","transition":"...",
-"prompt":"standalone, production-ready video-model prompt including performance and timing"}}]}}
+"prompt":"standalone, production-ready video-model prompt including performance and timing; describe only dialogue and diegetic sound, never music or score"}}]}}
 Durations must total exactly {scene['duration']} seconds and every duration must be at most
 {self.max_shot_seconds} seconds. Each shot starts independently from text and references.""",
             )

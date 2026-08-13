@@ -66,6 +66,8 @@ class MediaTools:
                 "medium",
                 "-crf",
                 "19",
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -102,6 +104,8 @@ class MediaTools:
                 "-t",
                 str(duration),
                 "-vn",
+                "-af",
+                "loudnorm=I=-24:TP=-2:LRA=7,aresample=48000",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -153,8 +157,9 @@ class MediaTools:
             delay = max(0, round(start * 1_000))
             label = f"background{index}"
             filters.append(
-                f"[{index}:a]atrim=0:{duration},asetpts=PTS-STARTPTS,"
-                f"adelay={delay}|{delay},volume=0.28[{label}]"
+                f"[{index}:a]aresample=48000,apad=whole_dur={duration},"
+                f"atrim=0:{duration},asetpts=PTS-STARTPTS,"
+                f"adelay={delay}|{delay}[{label}]"
             )
             labels.append(f"[{label}]")
         if len(labels) == 1:
@@ -167,13 +172,16 @@ class MediaTools:
         if self.has_audio(joined):
             filters.extend(
                 [
-                    "[background][0:a]sidechaincompress=threshold=0.04:ratio=8:"
-                    "attack=20:release=400[ducked]",
-                    "[0:a][ducked]amix=inputs=2:normalize=0:duration=first[mixed]",
+                    "[0:a]asplit=2[program][dialoguekeyraw]",
+                    "[dialoguekeyraw]highpass=f=120,lowpass=f=4000[dialoguekey]",
+                    "[background][dialoguekey]sidechaincompress=threshold=0.03:ratio=8:"
+                    "attack=15:release=350[ducked]",
+                    "[program][ducked]amix=inputs=2:normalize=0:duration=first,"
+                    "alimiter=limit=0.95:attack=5:release=50[mixed]",
                 ]
             )
         else:
-            filters.append("[background]anull[mixed]")
+            filters.append("[background]alimiter=limit=0.95:attack=5:release=50[mixed]")
         command.extend(
             [
                 "-filter_complex",

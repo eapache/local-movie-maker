@@ -24,13 +24,14 @@ const stages = [
   ['shotlist', 'Shot planning'],
   ['references', 'References'],
   ['shots', 'Rendering'],
-  ['soundtrack', 'Sound + edit'],
+  ['soundtrack', 'Soundtrack'],
+  ['assembly', 'Editing'],
 ];
 
 const stageOrder = {
   queued: -1, planning: 0, overview: 0, bible: 1, screenplay: 2, shotlist: 3,
-  references: 4, shots: 5, soundtrack: 6, assembly: 6,
-  complete: 7, failed: -1,
+  references: 4, shots: 5, soundtrack: 6, assembly: 7,
+  complete: 8, failed: -1,
 };
 
 function setText(selector, value) {

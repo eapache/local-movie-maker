@@ -189,6 +189,11 @@ function renderResult(project) {
   setText('#result-title', project.plan?.title || 'Your film');
   setText('#result-logline', project.plan?.logline || '');
   const video = $('#final-video');
+  const aspectRatios = {
+    vertical: '9 / 16',
+    square: '1 / 1',
+  };
+  video.closest('.screen').style.aspectRatio = aspectRatios[project.request?.resolution] || '16 / 9';
   if (video.src !== new URL(project.video_url, location.href).href) {
     video.src = project.video_url;
     video.load();

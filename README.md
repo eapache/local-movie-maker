@@ -1,159 +1,143 @@
 # Local Movie Maker
 
-A small, local-first web studio that turns a short prompt into a finished video. It uses:
+Local Movie Maker turns a short prompt into a finished video using AI services on
+your own machine:
 
-- **llama.cpp** for the treatment, continuity bible, characters, locations, and shot script.
-- **ComfyUI** for reference art, native video with dialogue, and background audio.
-- **FFmpeg** for consistent clip formatting, dialogue-aware audio mixing, and final assembly.
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) writes the story and shot plan.
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) creates reference art,
+  video clips, dialogue, and background audio.
+- [FFmpeg](https://ffmpeg.org/) mixes the audio and assembles the final MP4.
 
-The browser shows live progress, the generated production book, reference images, shot list, and a downloadable MP4. Projects and intermediate media are kept on disk in `projects/`.
+The web interface shows progress, the production book, reference images, the
+shot list, and the finished video. Everything is stored locally in `projects/`.
 
 ## Quick start
 
-Python 3.11+ and FFmpeg are required. The app itself has no third-party Python runtime dependencies.
+This guide assumes llama.cpp and ComfyUI run locally on their usual ports:
 
-With llama.cpp already listening on port 8080 and ComfyUI on port 8188:
+| Service | Address |
+| --- | --- |
+| llama.cpp | `http://127.0.0.1:8080` |
+| ComfyUI | `http://127.0.0.1:8188` |
+| Local Movie Maker | `http://127.0.0.1:8090` |
+
+You will need Python 3.11 or newer, FFmpeg, a llama.cpp-compatible language
+model, and working ComfyUI image, reference-video, and audio workflows. The app
+itself has no third-party Python runtime dependencies.
+
+### 1. Start llama.cpp
+
+From your llama.cpp installation, load a model and listen on port 8080:
+
+```bash
+./llama-server -m /path/to/model.gguf --host 127.0.0.1 --port 8080
+```
+
+A llama.cpp router on the same port works too. Local Movie Maker discovers its
+available models automatically.
+
+### 2. Start ComfyUI
+
+From your ComfyUI installation, listen on port 8188:
+
+```bash
+python3 main.py --listen 127.0.0.1 --port 8188
+```
+
+Local Movie Maker needs three executable ComfyUI workflows:
+
+- a text-to-image workflow for character and setting references;
+- a text-and-reference-to-video workflow for each shot;
+- a text-to-audio workflow for background music or ambience.
+
+If those workflows are already saved in API format, you are ready. Otherwise,
+open each working graph in ComfyUI, enable **Dev Mode**, choose **File → Export
+(API)**, and put the downloaded JSON in your active ComfyUI user workflow folder
+(commonly `ComfyUI/user/default/workflows/`). Use a distinct filename so you do
+not overwrite the editable UI graph.
+
+### 3. Start Local Movie Maker
+
+From this repository:
 
 ```bash
 python3 run.py
 ```
 
-Open <http://127.0.0.1:8090>. The app discovers llama.cpp models and ComfyUI image/video workflows. Open **Advanced models & workflows** to override its selections.
+Open <http://127.0.0.1:8090>. Expand **Advanced models & workflows**, then select:
 
-Run the tests with:
+1. the llama.cpp story model;
+2. the reference image workflow;
+3. the reference video workflow;
+4. the background audio workflow.
 
-```bash
-pytest -q
+For a quick first run, choose a short duration and 540p resolution, enter a
+prompt, and click **Make film**. GPU-heavy projects are processed one at a time.
+
+> If a workflow appears as **UI format (Export API)**, ComfyUI cannot execute it
+> through its remote prompt API. Export that workflow as described above, copy
+> the resulting JSON into the workflow folder, and refresh the selections.
+
+## What happens after you click Make film
+
+```text
+prompt → story, continuity, scenes, and shots             llama.cpp
+       → character and setting reference images           ComfyUI
+       → video clips plus scene-sized background audio    ComfyUI
+       → mixed and assembled final.mp4                     FFmpeg
 ```
 
-## Connect llama.cpp and ComfyUI
+The video workflow's own audio is kept for dialogue and diegetic sound.
+Background tracks are mixed underneath it and ducked during dialogue. Completed
+work remains in `projects/<id>/` if a run is interrupted.
 
-No model names or workflows are hard-coded. The app reads llama.cpp's `/v1/models` (including router presets) and ComfyUI's saved workflows. The story model and executable reference-image, reference-video, and background-audio workflows are all required. A choice in the Advanced panel applies to that film; environment variables set machine-wide defaults.
+<details>
+<summary><strong>Use non-default service addresses</strong></summary>
 
-The easiest setup when the services are not already running and both systems share a GPU is to let this app own their processes:
+Set the service URLs before starting the app:
+
+```bash
+export LLAMA_URL=http://192.168.1.20:8080
+export COMFY_URL=http://192.168.1.21:8188
+python3 run.py
+```
+
+See [Configuration and reference](docs/configuration.md) for persistent workflow
+defaults, managed service commands, timeouts, and every other setting.
+
+</details>
+
+<details>
+<summary><strong>Let Local Movie Maker start and stop the AI services</strong></summary>
+
+This is useful when llama.cpp and ComfyUI share one GPU. Configure commands for
+both services and default workflow files, then run the app normally:
 
 ```bash
 export LLAMA_SERVER_COMMAND='/opt/llama.cpp/llama-server -m /models/writer.gguf --host 127.0.0.1 --port 8080'
 export COMFY_SERVER_COMMAND='python3 /opt/ComfyUI/main.py --listen 127.0.0.1 --port 8188'
-export COMFY_IMAGE_WORKFLOW="$PWD/workflows/my-image-api.json"
-export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
-export COMFY_BACKGROUND_AUDIO_WORKFLOW="$PWD/workflows/my-background-audio-api.json"
+export COMFY_IMAGE_WORKFLOW="$PWD/workflows/reference-image-api.json"
+export COMFY_VIDEO_WORKFLOW="$PWD/workflows/reference-video-api.json"
+export COMFY_BACKGROUND_AUDIO_WORKFLOW="$PWD/workflows/background-audio-api.json"
 python3 run.py
 ```
 
-For every queued film, the app starts llama.cpp and completes all structured writing before
-starting ComfyUI. Films up to five minutes use a compact treatment/bible/shot-list path.
-Longer films use a hierarchical path: a multi-page overview and chapters, a larger continuity
-bible, scene lists for each chapter, a written screenplay for every scene, and independently
-prompted shots for every scene. The ComfyUI process is stopped when the film is finished.
-GPU-heavy projects run one at a time.
+Local Movie Maker runs all llama.cpp planning first, releases that model, starts
+ComfyUI for media generation, and stops ComfyUI when the film is complete.
 
-If the services run elsewhere, use `LLAMA_URL` and `COMFY_URL`. With current llama.cpp router builds, the selected model is autoloaded and then released through `/models/unload` before ComfyUI rendering. Classic single-model servers fall back to clearing their context slots; `LLAMA_UNLOAD_URL` can override that behavior. See [.env.example](.env.example) for every option.
+</details>
 
-## ComfyUI workflows
+## More documentation
 
-Reference-image, reference-video, and background-audio workflows must each be selected in the Advanced panel or configured with `COMFY_IMAGE_WORKFLOW`, `COMFY_VIDEO_WORKFLOW`, and `COMFY_BACKGROUND_AUDIO_WORKFLOW` respectively.
+- [Configuration and reference](docs/configuration.md) — workflow requirements,
+  placeholders, environment variables, service lifecycle, pipeline details, and
+  HTTP API.
+- [.env.example](.env.example) — copyable list of common settings.
 
-### Exporting API workflows
+## Development
 
-The app lists workflows from ComfyUI's `userdata` API and recognizes T2I, image-to-video, and text-to-video graphs. ComfyUI's normal **Save** and **Save As** commands store editable UI graphs; its remote prompt endpoint requires a flattened API graph.
-
-1. Enable **Dev Mode** in ComfyUI settings.
-2. Open and test the image or video workflow.
-3. Open ComfyUI's **File** menu and choose **Export (API)**. If that is the API export action you already see, it is the correct one—current ComfyUI does not call it **Save (API Format)**. Export downloads a JSON file; it does not add the API graph to ComfyUI's saved-workflow list.
-4. Set the corresponding workflow environment variable to that downloaded file, or copy it into the active ComfyUI user workflow directory (commonly `ComfyUI/user/default/workflows/`) under a distinct name such as `portrait-api.json` so it does not overwrite the editable UI graph.
-5. If you copied it into ComfyUI, open **Advanced models & workflows** in Local Movie Maker, refresh, and select it.
-
-UI-format workflows are shown but disabled with an “Export API” label. This is intentional: silently guessing how to flatten arbitrary custom nodes and subgraphs can change a graph's behavior. No synthetic media is substituted for a missing workflow.
-
-Workflow files are ordinary ComfyUI API JSON with `{{TOKEN}}` placeholders. An exact placeholder retains its number type; placeholders embedded in longer strings are replaced as text.
-
-Image workflows can use:
-
-| Token | Meaning |
-| --- | --- |
-| `{{PROMPT}}` | Production-ready visual prompt |
-| `{{NEGATIVE_PROMPT}}` | Default quality exclusions |
-| `{{SEED}}` | Stable per-asset seed |
-| `{{CHECKPOINT}}` | `COMFY_CHECKPOINT` value |
-| `{{WIDTH}}`, `{{IMAGE_WIDTH}}` | Generation width |
-| `{{HEIGHT}}`, `{{IMAGE_HEIGHT}}` | Generation height |
-
-The primary video workflow begins each shot from text plus the generated character
-and setting references. It receives:
-
-| Token | Meaning |
-| --- | --- |
-| `{{REFERENCE_IMAGES}}` | List of relevant uploaded reference filenames |
-| `{{REFERENCE_IMAGE}}`, `{{REFERENCE_IMAGE_1}}` … `{{REFERENCE_IMAGE_6}}` | Relevant references in character-then-setting order |
-| `{{CHARACTER_REFERENCE_1}}` … `{{CHARACTER_REFERENCE_3}}` | Character reference filenames |
-| `{{SETTING_REFERENCE}}` | Current setting reference filename |
-| `{{DURATION}}` | Shot length in seconds |
-| `{{FRAMES}}` | Shot length at 24 fps |
-| `{{FPS}}` | `24` |
-| `{{WIDTH}}`, `{{HEIGHT}}` | Final output dimensions |
-
-Every planned shot is capped at `COMFY_VIDEO_SEGMENT_SECONDS` (15 seconds by
-default). Longer action is expressed as additional, independently generated
-shots; no continuation or prior-keyframe workflow is used. LoadImage nodes may
-alternatively be titled **Character Reference 1** or **Setting Reference** for
-automatic injection. The standard MiniMax H3 reference-to-video graph is also
-recognized from its `ref_images.ref_image_*` connections, and the linked
-`LoadImage` nodes are populated in that input order.
-
-Background-audio workflows receive `{{PROMPT}}`, `{{DURATION}}`, `{{SECONDS}}`,
-and `{{SEED}}`. The planner creates scene-sized cues, so a single generated
-ambience or music track can span several shots.
-
-Set configured workflow paths before starting the app, or select all three in
-the Advanced panel:
+Run the test suite with:
 
 ```bash
-export COMFY_IMAGE_WORKFLOW="$PWD/workflows/my-image-api.json"
-export COMFY_VIDEO_WORKFLOW="$PWD/workflows/my-video-api.json"
-export COMFY_BACKGROUND_AUDIO_WORKFLOW="$PWD/workflows/my-background-audio-api.json"
-python3 run.py
+pytest -q
 ```
-
-ComfyUI installations and video/audio node packs vary substantially, which is why those workflows are user-supplied. Pure T2V and keyframe-based I2V graphs are discovered but are not offered as movie workflows: the graph must accept references without requiring a starting frame. For ordinary saved API exports, the app injects common prompt, reference, duration/frame-count, size, FPS, and seed fields. Explicit `{{TOKEN}}` placeholders remain available when a graph uses unusual names.
-
-All character and setting images are generated before any video job is queued, so
-ComfyUI can keep the image model hot and then transition to video generation only
-once. References are uploaded once and reused across every matching shot. Audio
-produced by a video workflow is preserved for dialogue and diegetic sound. Background
-tracks are mixed underneath it at a lower level and ducked when dialogue
-is present. No synthetic media is substituted for missing generative models.
-
-## Pipeline
-
-```text
-prompt + duration + resolution
-             │
-             ▼
-  overview + chapters → continuity bible              llama.cpp
-             │
-  scene lists → per-scene scripts → prompted shots     llama.cpp
-             │
-             ▼  model/context released
-  all character + setting reference images            ComfyUI image phase
-             │
-             ▼
-  text + relevant refs → capped video clips            ComfyUI video phase
-             └── scene-spanning background audio ───── ComfyUI T2A
-                              │
-                              ▼
-                         final.mp4                      FFmpeg
-```
-
-Generated state is updated atomically in `projects/<id>/project.json`. If the app is interrupted, completed work remains available and an in-flight project is marked failed on the next start instead of silently appearing stuck.
-
-## HTTP API
-
-- `POST /api/projects` — accepts `{"prompt":"...","duration":30,"resolution":"720p"}` plus `llama_model`, `image_workflow`, `video_workflow`, and `background_audio_workflow` selections unless their corresponding environment defaults are configured. `checkpoint` is optional.
-- `GET /api/integrations` — discovers llama.cpp models, ComfyUI checkpoints, and saved workflows.
-- `GET /api/projects/<id>` — returns status, progress, plan, assets, errors, and final URL.
-- `GET /api/projects` — returns the 20 most recent projects.
-- `GET /media/<id>/...` — serves generated project media with video byte-range support.
-
-Duration may be from 5 seconds through 90 minutes. Resolution ids are `540p`,
-`720p`, `1080p`, and `square`; the current UI presents the three landscape options.

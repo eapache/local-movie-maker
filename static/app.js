@@ -309,11 +309,11 @@ async function loadIntegrations() {
     $('#image-workflow-help').textContent = executableImages.length
       ? 'Executable T2I workflows are preferred; the configured image workflow remains available as a fallback.'
       : imageWorkflows.length
-        ? 'File → Export (API) downloads JSON. Copy it back as *-api.json under ComfyUI/user/default/workflows (or the active user folder), then refresh.'
+        ? `${imageWorkflows.length} saved image workflow(s) still need an API export.`
         : `No saved T2I API workflows found; using configured ${integrations.comfy.workflows.image}.`;
     $('#workflow-help').textContent = videoOK
       ? 'Begins each shot from its text plus the matching character and setting references.'
-      : 'Export an API graph with REFERENCE_IMAGES inputs or LoadImage nodes titled as references.';
+      : 'No executable text + reference video workflow was found.';
     if (!llamaOK || !imageOK || !videoOK) $('#advanced').open = true;
   } catch (error) {
     summary.textContent = 'Local service discovery failed';

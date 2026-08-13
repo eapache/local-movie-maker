@@ -139,6 +139,7 @@ output { color: var(--acid); font: 500 14px ui-monospace, SFMono-Regular, Menlo,
 .advanced-grid label b { color: var(--orange); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
 .advanced-grid select { width: 100%; min-width: 0; color: var(--ink); background: #101012; border: 1px solid #444247; padding: 12px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .advanced-grid small { color: #77757a; font-size: 10px; line-height: 1.5; }
+.workflow-export-help { margin: 0 0 22px; padding: 13px 15px; border-left: 2px solid #555259; color: #8f8c85; background: #101012; font-size: 10px; line-height: 1.6; }
 .refresh-integrations { appearance: none; border: 0; border-bottom: 1px solid #77757a; padding: 0 0 4px; margin-bottom: 22px; color: #aaa7a0; background: none; cursor: pointer; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .refresh-integrations:hover { color: var(--acid); border-color: var(--acid); }
 

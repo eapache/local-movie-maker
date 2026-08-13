@@ -106,11 +106,7 @@ class MoviePipeline:
                     saved = comfy.load_saved_workflow(saved_name)
                     description = describe_workflow(saved_name, saved)
                     if description["format"] != "api":
-                        raise ApiError(
-                            f"'{saved_name}' is a ComfyUI UI workflow. Use File → "
-                            "Export (API), copy the exported JSON into ComfyUI's user "
-                            "workflow folder, then select it."
-                        )
+                        raise ApiError(api_export_message(saved_name))
                     if description["kind"] != "image":
                         raise ApiError(f"'{saved_name}' does not appear to produce images.")
                     image_workflow = saved
@@ -423,10 +419,7 @@ def resolve_video_workflow(
 
     description = describe_workflow(name or f"configured-{role}.json", workflow)
     if description["format"] != "api":
-        raise ApiError(
-            f"'{name or role}' is a ComfyUI UI workflow. Use File → Export (API), "
-            "copy the exported JSON into ComfyUI's user workflow folder, then select it."
-        )
+        raise ApiError(api_export_message(name or role))
     capabilities = description["capabilities"]
     if not capabilities["video"] or not capabilities["references"]:
         raise ApiError(
@@ -459,14 +452,18 @@ def resolve_audio_workflow(
         return None, None
     description = describe_workflow(name or "configured-background-audio.json", workflow)
     if description["format"] != "api":
-        raise ApiError(
-            f"'{name or 'background audio'}' is a ComfyUI UI workflow. Use File → "
-            "Export (API), copy the exported JSON into ComfyUI's user workflow "
-            "folder, then select it."
-        )
+        raise ApiError(api_export_message(name or "background audio"))
     if description["kind"] != "audio":
         raise ApiError(f"'{name or 'background audio'}' must produce audio.")
     return workflow, name
+
+
+def api_export_message(name: str) -> str:
+    return (
+        f"'{name}' is a ComfyUI UI workflow. Enable Dev Mode, use File → "
+        "Export (API), put the downloaded JSON in ComfyUI's active user workflow "
+        "folder, then refresh and select it."
+    )
 
 
 def planned_audio_cues(plan: dict[str, Any]) -> list[dict[str, Any]]:
